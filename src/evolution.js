@@ -31,7 +31,7 @@ export class PopulationManager {
     const pos = new THREE.Vector3(
       (Math.random() * 2 - 1) * (b.x - 8),
       (Math.random() * 2 - 1) * (b.y - 6),
-      (Math.random() * 2 - 1) * (b.z - 8)
+      (Math.random() * 2 - 1) * Math.max(1, b.z - 3)
     );
 
     const c = new Creature(pos, genome, gen);

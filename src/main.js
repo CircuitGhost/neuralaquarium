@@ -213,10 +213,10 @@ class SimulationApp {
 
     // Camera Rig & Tracking Controller (Smooth 2.5D Translation)
     const selected = this.population.selectedCreature;
-    if (selected && !selected.isDead) {
+    if (selected && !selected.isDead && Number.isFinite(selected.position.x) && Number.isFinite(selected.position.y)) {
       if (this.cameraController.mode === 'macro') {
         // Macro studio: lock target to head and maintain close distance
-        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, selected.position.z);
+        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, selected.position.z || 0);
         const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
         const step = targetDelta.multiplyScalar(0.08);
         this.controls.target.add(step);
@@ -237,15 +237,46 @@ class SimulationApp {
       }
     }
 
+    // Safety fallback: ensure camera and controls target are always valid
+    if (!Number.isFinite(this.camera.position.x) || !Number.isFinite(this.controls.target.x)) {
+      this.controls.target.set(0, 0, 0);
+      this.camera.position.set(0, 0, 68);
+    }
+
     this.controls.update();
 
-    // Render Post-Processed Scene
-    this.composer.render();
+    // Render Post-Processed Scene with fallback
+    try {
+      this.composer.render();
+    } catch (e) {
+      this.renderer.render(this.scene, this.camera);
+    }
 
     // Update Telemetry UI
     this.ui.update();
   }
 }
+
+function showErrorBanner(msg) {
+  let errBox = document.getElementById('runtime-error-box');
+  if (!errBox) {
+    errBox = document.createElement('div');
+    errBox.id = 'runtime-error-box';
+    errBox.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(180,0,30,0.92);color:white;padding:16px 24px;border-radius:10px;z-index:999999;font-family:monospace;font-size:12px;max-width:90%;box-shadow:0 0 30px rgba(0,0,0,0.8);pointer-events:auto;';
+    document.body.appendChild(errBox);
+  }
+  errBox.innerHTML = `<strong>⚠️ Simulation Error:</strong> ${msg}`;
+}
+
+window.addEventListener('error', (e) => {
+  console.error('Runtime error:', e.error || e.message);
+  showErrorBanner(e.message);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled rejection:', e.reason);
+  showErrorBanner(e.reason?.message || String(e.reason));
+});
 
 function bootSimulator() {
   try {
@@ -254,10 +285,7 @@ function bootSimulator() {
     console.log('Synapse-3D Aquarium running successfully!');
   } catch (err) {
     console.error('CRITICAL BOOT ERROR:', err);
-    const errBox = document.createElement('div');
-    errBox.style.cssText = 'position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);background:rgba(180,0,30,0.95);color:white;padding:24px;border-radius:12px;z-index:999999;font-family:monospace;font-size:13px;max-width:85%;white-space:pre-wrap;box-shadow:0 0 40px rgba(0,0,0,0.8);';
-    errBox.innerHTML = `<strong>⚠️ Aquarium Boot Failure</strong>\n\n${err.message}\n\n${err.stack}`;
-    document.body.appendChild(errBox);
+    showErrorBanner(`${err.message}\n\n${err.stack}`);
   }
 }
 

@@ -46,8 +46,8 @@ export class Environment {
   initTankGeometry() {
     const b = this.bounds;
 
-    // 1. Back Wall Backdrop with Deep Aquatic Gradient
-    const backGeo = new THREE.PlaneGeometry(b.x * 2 + 10, b.y * 2 + 10);
+    // 1. Back Wall Backdrop with Deep Aquatic Gradient (Generously fills viewing frustum)
+    const backGeo = new THREE.PlaneGeometry(b.x * 2 + 60, b.y * 2 + 40);
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
@@ -56,15 +56,15 @@ export class Environment {
     grad.addColorStop(0, '#0284c7');   // Luminous surface blue
     grad.addColorStop(0.35, '#0369a1'); // Ocean cerulean
     grad.addColorStop(0.7, '#075985');  // Deep blue
-    grad.addColorStop(1.0, '#082f49');  // Abyssal navy
+    grad.addColorStop(1.0, '#041d33');  // Abyssal navy
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
     const backTex = new THREE.CanvasTexture(canvas);
     backTex.needsUpdate = true;
-    const backMat = new THREE.MeshBasicMaterial({ map: backTex });
+    const backMat = new THREE.MeshBasicMaterial({ map: backTex, depthWrite: false });
     this.backdrop = new THREE.Mesh(backGeo, backMat);
-    this.backdrop.position.set(0, 0, -b.z - 2.0);
+    this.backdrop.position.set(0, 0, -b.z - 2.5);
     this.scene.add(this.backdrop);
 
     // 2. Tank Frame & Edge Outlines

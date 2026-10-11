@@ -27,6 +27,7 @@ export class Creature {
     this.velocity = new THREE.Vector3();
     this.quaternion = new THREE.Quaternion();
     this.speed = 0.0;
+    this.maxSpeed = (traits && traits.maxSpeed) ? traits.maxSpeed : 10.0;
     this.headingAngle = Math.random() * Math.PI * 2;
     this.heading = new THREE.Vector3(Math.cos(this.headingAngle), Math.sin(this.headingAngle), 0);
     this.pitch = 0.0;
@@ -385,14 +386,17 @@ export class Creature {
 
     this.heading.lerp(targetHeading, dt * 5.5).normalize();
 
-    // Smoothly orient 3D mesh along heading
-    const lookTarget = this.position.clone().add(this.heading);
-    this.mesh.lookAt(lookTarget);
-    this.quaternion.copy(this.mesh.quaternion);
+    if (this.heading.lengthSq() > 0.0001) {
+      this.heading.normalize();
+      const lookTarget = this.position.clone().add(this.heading);
+      this.mesh.lookAt(lookTarget);
+      this.quaternion.copy(this.mesh.quaternion);
+    }
 
     // Accelerate along heading
-    const targetSpeed = forwardThrust * this.maxSpeed;
+    const targetSpeed = forwardThrust * (this.maxSpeed || 10.0);
     this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, dt * 3.8);
+    if (!Number.isFinite(this.speed)) this.speed = 0.0;
     this.velocity.copy(this.heading).multiplyScalar(this.speed);
 
     // 2.5D Tank Boundary Repulsion & Z-Depth Centering
@@ -407,6 +411,9 @@ export class Creature {
     this.velocity.addScaledVector(boundaryPush, dt);
 
     this.position.addScaledVector(this.velocity, dt);
+    if (!Number.isFinite(this.position.x) || !Number.isFinite(this.position.y)) {
+      this.position.set(0, 0, 0);
+    }
     this.mesh.position.copy(this.position);
 
     // Reticle animation
