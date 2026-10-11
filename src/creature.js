@@ -59,14 +59,14 @@ export class Creature {
     this.headMat = new THREE.MeshPhysicalMaterial({
       color: this.color,
       emissive: this.emissiveColor,
-      emissiveIntensity: 0.25,
+      emissiveIntensity: 0.5,
       transparent: true,
-      opacity: 0.55,
-      roughness: 0.2,
+      opacity: 0.82,
+      roughness: 0.25,
       metalness: 0.1,
-      transmission: 0.7,
+      transmission: 0.25,
       ior: 1.33,
-      thickness: 1.2
+      thickness: 1.0
     });
 
     this.headMesh = new THREE.Mesh(headGeo, this.headMat);
@@ -388,6 +388,7 @@ export class Creature {
     // Smoothly orient 3D mesh along heading
     const lookTarget = this.position.clone().add(this.heading);
     this.mesh.lookAt(lookTarget);
+    this.quaternion.copy(this.mesh.quaternion);
 
     // Accelerate along heading
     const targetSpeed = forwardThrust * this.maxSpeed;

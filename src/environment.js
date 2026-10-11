@@ -24,23 +24,23 @@ export class Environment {
 
   initLighting() {
     // Deep Ocean Ambient Light
-    this.ambientLight = new THREE.AmbientLight(0x0a223d, 2.2);
+    this.ambientLight = new THREE.AmbientLight(0x0c3a66, 2.5);
     this.scene.add(this.ambientLight);
 
+    // Front View Fill Light (illuminates creatures directly towards camera)
+    this.frontLight = new THREE.DirectionalLight(0xe0f2fe, 3.0);
+    this.frontLight.position.set(0, 10, 60);
+    this.scene.add(this.frontLight);
+
     // Overhead Sunlight penetrating the surface
-    this.sunLight = new THREE.DirectionalLight(0xa5f3fc, 3.2);
+    this.sunLight = new THREE.DirectionalLight(0x7dd3fc, 3.5);
     this.sunLight.position.set(10, 60, 25);
     this.scene.add(this.sunLight);
 
     // Bottom Ambient bounce light from sand
-    this.sandBounce = new THREE.DirectionalLight(0x0e7490, 1.2);
+    this.sandBounce = new THREE.DirectionalLight(0x0284c7, 1.5);
     this.sandBounce.position.set(0, -40, 20);
     this.scene.add(this.sandBounce);
-
-    // Shimmering accent spot
-    this.spotLight = new THREE.SpotLight(0x06b6d4, 4.0, 120, Math.PI * 0.45, 0.5);
-    this.spotLight.position.set(0, 45, 10);
-    this.scene.add(this.spotLight);
   }
 
   initTankGeometry() {
@@ -53,14 +53,15 @@ export class Environment {
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#0c4a6e');   // Deep cyan-blue near water surface
-    grad.addColorStop(0.4, '#082f49'); // Abyssal teal
-    grad.addColorStop(0.8, '#03192e'); // Deep shadow
-    grad.addColorStop(1.0, '#020b18'); // Sandy trench bottom
+    grad.addColorStop(0, '#0284c7');   // Luminous surface blue
+    grad.addColorStop(0.35, '#0369a1'); // Ocean cerulean
+    grad.addColorStop(0.7, '#075985');  // Deep blue
+    grad.addColorStop(1.0, '#082f49');  // Abyssal navy
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
     const backTex = new THREE.CanvasTexture(canvas);
+    backTex.needsUpdate = true;
     const backMat = new THREE.MeshBasicMaterial({ map: backTex });
     this.backdrop = new THREE.Mesh(backGeo, backMat);
     this.backdrop.position.set(0, 0, -b.z - 2.0);

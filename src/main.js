@@ -247,7 +247,22 @@ class SimulationApp {
   }
 }
 
-// Boot simulator when DOM is ready
-window.addEventListener('DOMContentLoaded', () => {
-  new SimulationApp();
-});
+function bootSimulator() {
+  try {
+    console.log('Booting Synapse-3D Aquarium...');
+    new SimulationApp();
+    console.log('Synapse-3D Aquarium running successfully!');
+  } catch (err) {
+    console.error('CRITICAL BOOT ERROR:', err);
+    const errBox = document.createElement('div');
+    errBox.style.cssText = 'position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);background:rgba(180,0,30,0.95);color:white;padding:24px;border-radius:12px;z-index:999999;font-family:monospace;font-size:13px;max-width:85%;white-space:pre-wrap;box-shadow:0 0 40px rgba(0,0,0,0.8);';
+    errBox.innerHTML = `<strong>⚠️ Aquarium Boot Failure</strong>\n\n${err.message}\n\n${err.stack}`;
+    document.body.appendChild(errBox);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootSimulator);
+} else {
+  bootSimulator();
+}
