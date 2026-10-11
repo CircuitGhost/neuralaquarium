@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synapse-3D // Evolving Neural Connectome Aquarium</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <!-- 3D WebGL Canvas Layer -->
+  <div id="canvas-container"></div>
+
+  <!-- Cybernetic HUD Overlay -->
+  <div id="ui-overlay">
+    <!-- Top System Header -->
+    <header class="top-bar glass-panel">
+      <div class="brand-section">
+        <div class="brand-logo"></div>
+        <div>
+          <div class="brand-title">SYNAPSE-3D</div>
+          <div class="brand-subtitle">CONNECTOME AQUARIUM & SURGERY LAB</div>
+        </div>
+      </div>
+
+      <!-- Specimen Quick Selection Bar -->
+      <div class="btn-group">
+        <span class="metric-label" style="margin-right: 4px;">SPECIMEN:</span>
+        <button id="btn-spec-prev" class="btn btn-sm" title="Previous Specimen (Tab / [ )">◄</button>
+        <button id="btn-spec-next" class="btn btn-sm" title="Next Specimen (Tab / ] )">►</button>
+        <button id="btn-alpha" class="btn btn-sm" title="Jump to Alpha Hunter (Most Food)">👑 Alpha</button>
+        <button id="btn-elder" class="btn btn-sm" title="Jump to Oldest Organism">⏳ Elder</button>
+        <button id="btn-fastest" class="btn btn-sm" title="Jump to Fastest Swimmer">⚡ Fastest</button>
+      </div>
+
+      <div class="btn-group">
+        <div class="metric-row" style="margin-bottom: 0; gap: 14px;">
+          <div><span class="metric-label">POP: </span><span id="val-population" class="metric-value">0</span></div>
+          <div><span class="metric-label">HORIZON: </span><span id="val-generation" class="metric-value">Gen 1</span></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Telemetry Drawers -->
+    <main class="mid-layout">
+      <!-- Left Drawer: Ecosystem Metrics -->
+      <section class="drawer-left">
+        <div class="card glass-panel">
+          <div class="card-title">
+            <span>Ecosystem Matrix</span>
+            <span style="font-size: 9px; opacity: 0.6;">LIVE</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Nutrient Plankton</span>
+            <span id="val-food" class="metric-value">0</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Total Replications</span>
+            <span id="val-births" class="metric-value">0</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Starvation Deaths</span>
+            <span id="val-deaths" class="metric-value">0</span>
+          </div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+            <button id="btn-feed" class="btn btn-emerald" style="width: 100%; justify-content: center;">
+              Drop Plankton Cluster (F)
+            </button>
+            <button id="btn-reset" class="btn" style="width: 100%; justify-content: center;">
+              Re-seed Population
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Drawer: Specimen Connectome Telemetry -->
+      <section class="drawer-right">
+        <div class="card glass-panel">
+          <div class="card-title">
+            <span>Specimen Connectome</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span id="val-spec-id" class="metric-value" style="color: var(--cyan-glow);">#1</span>
+              <button id="btn-clone-spec" class="btn btn-sm btn-emerald" title="Clone this exact genome into 3 identical specimens">🧬 Clone (x3)</button>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Lineage</span>
+            <span id="val-spec-gen" class="metric-value">Gen 1</span>
+          </div>
+          <div class="metric-row" style="margin-bottom: 2px;">
+            <span class="metric-label">Metabolic Energy</span>
+            <span id="val-spec-energy" class="metric-value">100 / 220</span>
+          </div>
+          <div class="energy-bar-wrap">
+            <div id="bar-spec-energy" class="energy-bar-fill"></div>
+          </div>
+          <div class="metric-row" style="margin-top: 10px;">
+            <span class="metric-label">Age</span>
+            <span id="val-spec-age" class="metric-value">0.0s</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Nutrients Consumed</span>
+            <span id="val-spec-food" class="metric-value">0</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Velocity</span>
+            <span id="val-spec-speed" class="metric-value">0.0</span>
+          </div>
+
+          <div style="margin-top: 12px;">
+            <div class="card-title" style="margin-bottom: 4px; font-size: 10px;">
+              <span>Neural Surgery & Action Potentials</span>
+              <span style="color: var(--text-muted); font-size: 8px;">CTRNN 8:4:4</span>
+            </div>
+            <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 6px; font-family: monospace;">
+              ⚡ Click neuron: stimulate | Click synapse: invert
+            </div>
+            <!-- 2D Connectome Architecture Display -->
+            <canvas id="brain-canvas" width="288" height="180"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Controls & Navigation -->
+    <footer class="bottom-bar glass-panel">
+      <!-- Camera Modes -->
+      <div class="btn-group">
+        <span class="metric-label" style="margin-right: 4px;">CAMERA:</span>
+        <button class="btn btn-cam-mode" data-mode="free" title="Free Orbit Camera (Key 1)">Free Orbit</button>
+        <button class="btn btn-cam-mode active" data-mode="chase" title="Smooth Chase Cam (Key 2)">Chase Cam</button>
+        <button class="btn btn-cam-mode" data-mode="macro" title="Macro Studio Connectome View (Key 3)">Macro Studio</button>
+      </div>
+
+      <!-- Zoom Controls -->
+      <div class="btn-group">
+        <span class="metric-label" style="margin-right: 4px;">ZOOM:</span>
+        <button id="btn-zoom-in" class="btn btn-sm" title="Zoom In (+)">+ Zoom In</button>
+        <button id="btn-zoom-out" class="btn btn-sm" title="Zoom Out (-)">− Zoom Out</button>
+      </div>
+
+      <!-- Speed & Bullet-Time Controls -->
+      <div class="btn-group">
+        <button id="btn-bullet-time" class="btn" title="Toggle 0.22x Slow-Motion (Key B)">⏱️ Bullet-Time</button>
+        <button class="btn btn-speed" data-speed="0">Pause</button>
+        <button class="btn btn-speed active" data-speed="1">1x</button>
+        <button class="btn btn-speed" data-speed="2">2x</button>
+        <button class="btn btn-speed" data-speed="5">5x</button>
+      </div>
+
+      <div class="hints">
+        Tab: Cycle | Scroll / + -: Zoom | 1/2/3: Cam | B: Bullet-Time | F: Feed | Space: Pause
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
