@@ -3,103 +3,279 @@ import * as THREE from 'three';
 export class Environment {
   constructor(scene) {
     this.scene = scene;
-    this.bounds = new THREE.Vector3(48, 30, 48);
+    // 2.5D Aquarium Tank Bounds: Wide (X), Tall (Y), Thin Depth (Z)
+    this.bounds = new THREE.Vector3(50, 28, 7);
 
     // Food Particle Data
-    this.maxFood = 120;
-    this.foodItems = []; // Array of { position, velocity, phase }
+    this.maxFood = 90;
+    this.foodItems = [];
 
-    // Marine snow particulate count
-    this.snowCount = 1400;
+    // Plants / Kelp stalks
+    this.kelpStalks = [];
 
     this.initLighting();
-    this.initAquariumBoundary();
+    this.initTankGeometry();
+    this.initProceduralKelp();
+    this.initSubstrateAndRocks();
+    this.initCausticGodRays();
     this.initMarineSnow();
     this.initFoodSystem();
   }
 
   initLighting() {
-    // Deep Ocean Ambient
-    this.ambientLight = new THREE.AmbientLight(0x06152b, 1.8);
+    // Deep Ocean Ambient Light
+    this.ambientLight = new THREE.AmbientLight(0x0a223d, 2.2);
     this.scene.add(this.ambientLight);
 
-    // Key Caustic Sunlight Shaft
-    this.sunLight = new THREE.DirectionalLight(0x73d2ff, 2.8);
-    this.sunLight.position.set(20, 60, 30);
-    this.sunLight.castShadow = true;
+    // Overhead Sunlight penetrating the surface
+    this.sunLight = new THREE.DirectionalLight(0xa5f3fc, 3.2);
+    this.sunLight.position.set(10, 60, 25);
     this.scene.add(this.sunLight);
 
-    // Bioluminescent Depth Rim Light
-    this.rimLight = new THREE.DirectionalLight(0x7000ff, 1.6);
-    this.rimLight.position.set(-30, -20, -40);
-    this.scene.add(this.rimLight);
+    // Bottom Ambient bounce light from sand
+    this.sandBounce = new THREE.DirectionalLight(0x0e7490, 1.2);
+    this.sandBounce.position.set(0, -40, 20);
+    this.scene.add(this.sandBounce);
 
-    // Warm Accent Spotlight
-    this.spotLight = new THREE.SpotLight(0x00ffcc, 3.5, 90, Math.PI * 0.35, 0.4);
-    this.spotLight.position.set(0, 45, 0);
+    // Shimmering accent spot
+    this.spotLight = new THREE.SpotLight(0x06b6d4, 4.0, 120, Math.PI * 0.45, 0.5);
+    this.spotLight.position.set(0, 45, 10);
     this.scene.add(this.spotLight);
   }
 
-  initAquariumBoundary() {
+  initTankGeometry() {
     const b = this.bounds;
 
-    // Outer subtle boundary frame
+    // 1. Back Wall Backdrop with Deep Aquatic Gradient
+    const backGeo = new THREE.PlaneGeometry(b.x * 2 + 10, b.y * 2 + 10);
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0, '#0c4a6e');   // Deep cyan-blue near water surface
+    grad.addColorStop(0.4, '#082f49'); // Abyssal teal
+    grad.addColorStop(0.8, '#03192e'); // Deep shadow
+    grad.addColorStop(1.0, '#020b18'); // Sandy trench bottom
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+
+    const backTex = new THREE.CanvasTexture(canvas);
+    const backMat = new THREE.MeshBasicMaterial({ map: backTex });
+    this.backdrop = new THREE.Mesh(backGeo, backMat);
+    this.backdrop.position.set(0, 0, -b.z - 2.0);
+    this.scene.add(this.backdrop);
+
+    // 2. Tank Frame & Edge Outlines
     const boxGeo = new THREE.BoxGeometry(b.x * 2, b.y * 2, b.z * 2);
     const edges = new THREE.EdgesGeometry(boxGeo);
     const lineMat = new THREE.LineBasicMaterial({
-      color: 0x1a4575,
+      color: 0x0284c7,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.4,
       blending: THREE.AdditiveBlending
     });
     this.boundaryBox = new THREE.LineSegments(edges, lineMat);
     this.scene.add(this.boundaryBox);
 
-    // Subtle bottom grid (abyssal substrate grid)
-    const gridHelper = new THREE.GridHelper(b.x * 2, 24, 0x00e5ff, 0x0a2544);
-    gridHelper.position.y = -b.y;
-    this.scene.add(gridHelper);
-
-    // Glowing boundary corner brackets
-    const bracketGeo = new THREE.BoxGeometry(2, 2, 2);
-    const bracketMat = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff,
-      wireframe: true,
+    // 3. Water Surface Meniscus (Shimmering Top Plane)
+    const surfGeo = new THREE.PlaneGeometry(b.x * 2, b.z * 2);
+    this.surfMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
       transparent: true,
-      opacity: 0.25
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    const surface = new THREE.Mesh(surfGeo, this.surfMat);
+    surface.position.set(0, b.y, 0);
+    surface.rotation.x = Math.PI * 0.5;
+    this.scene.add(surface);
+  }
+
+  initSubstrateAndRocks() {
+    const b = this.bounds;
+
+    // Sandy Sea Floor Substrate
+    const floorGeo = new THREE.BoxGeometry(b.x * 2 + 8, 4.0, b.z * 2 + 6, 32, 1, 8);
+    // Displace floor vertices for organic sandy dunes
+    const pos = floorGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > 0) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        const dune = Math.sin(x * 0.12) * 0.8 + Math.cos(z * 0.3) * 0.4;
+        pos.setY(i, pos.getY(i) + dune);
+      }
+    }
+    floorGeo.computeVertexNormals();
+
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x093047,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.position.set(0, -b.y - 1.5, 0);
+    this.scene.add(floorMesh);
+
+    // Decorative Sea Rocks & Pebbles along substrate
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x052033,
+      roughness: 0.7,
+      metalness: 0.2
     });
 
-    [-b.x, b.x].forEach(x => {
-      [-b.y, b.y].forEach(y => {
-        [-b.z, b.z].forEach(z => {
-          const m = new THREE.Mesh(bracketGeo, bracketMat);
-          m.position.set(x, y, z);
-          this.scene.add(m);
-        });
+    const rockGeos = [
+      new THREE.DodecahedronGeometry(2.5, 1),
+      new THREE.DodecahedronGeometry(1.8, 1),
+      new THREE.DodecahedronGeometry(3.2, 1)
+    ];
+
+    // Seed 14 rocks across floor
+    for (let i = 0; i < 14; i++) {
+      const geo = rockGeos[i % rockGeos.length];
+      const rock = new THREE.Mesh(geo, rockMat);
+      const rx = (Math.random() * 2 - 1) * (b.x - 6);
+      const rz = (Math.random() * 2 - 1) * (b.z - 2);
+      const scaleY = 0.5 + Math.random() * 0.6;
+      rock.scale.set(1.0 + Math.random() * 0.5, scaleY, 1.0 + Math.random() * 0.5);
+      rock.position.set(rx, -b.y + 0.5, rz);
+      rock.rotation.set(Math.random(), Math.random(), Math.random());
+      this.scene.add(rock);
+    }
+  }
+
+  initProceduralKelp() {
+    const b = this.bounds;
+    const numStalks = 28;
+
+    for (let i = 0; i < numStalks; i++) {
+      const x = ((i / (numStalks - 1)) * 2 - 1) * (b.x - 5) + (Math.random() - 0.5) * 4.0;
+      // Stalk depths: some in background (Z < 0), some midground (Z ~ 0), some foreground (Z > 0)
+      const z = (Math.random() * 2 - 1) * (b.z - 2.5);
+      const height = 18.0 + Math.random() * 26.0; // Stalk height
+      const segments = Math.floor(height / 2.2);
+
+      const stalkGroup = new THREE.Group();
+      stalkGroup.position.set(x, -b.y, z);
+
+      // Create linked segmented stalk nodes
+      const nodes = [];
+      let parentObj = stalkGroup;
+
+      const kelpColor = new THREE.Color().setHSL(0.42 + Math.random() * 0.08, 0.75, 0.28 + (z + b.z) * 0.02);
+      const kelpMat = new THREE.MeshStandardMaterial({
+        color: kelpColor,
+        roughness: 0.35,
+        metalness: 0.1,
+        side: THREE.DoubleSide
       });
+
+      for (let s = 0; s < segments; s++) {
+        const segGroup = new THREE.Group();
+        segGroup.position.set(0, s === 0 ? 0 : 2.2, 0);
+
+        // Stalk stem cylinder
+        const stemGeo = new THREE.CylinderGeometry(0.12, 0.18, 2.2, 6);
+        stemGeo.translate(0, 1.1, 0);
+        const stemMesh = new THREE.Mesh(stemGeo, kelpMat);
+        segGroup.add(stemMesh);
+
+        // Alternating leafy ribbons
+        if (s > 1 && s % 2 === 0) {
+          const leafShape = new THREE.Shape();
+          const leafLen = 2.5 + Math.random() * 2.0;
+          const leafWidth = 0.6 + Math.random() * 0.4;
+          const side = (s % 4 === 0) ? 1 : -1;
+
+          leafShape.moveTo(0, 0);
+          leafShape.quadraticCurveTo(side * leafWidth, leafLen * 0.5, side * 0.2, leafLen);
+          leafShape.quadraticCurveTo(0, leafLen * 0.4, 0, 0);
+
+          const leafGeo = new THREE.ShapeGeometry(leafShape);
+          const leafMesh = new THREE.Mesh(leafGeo, kelpMat);
+          leafMesh.position.set(0, 1.1, 0);
+          leafMesh.rotation.z = side * 0.3;
+          segGroup.add(leafMesh);
+        }
+
+        parentObj.add(segGroup);
+        nodes.push(segGroup);
+        parentObj = segGroup;
+      }
+
+      // Bioluminescent tip bulb on taller stalks
+      if (height > 30.0) {
+        const bulbGeo = new THREE.SphereGeometry(0.3, 10, 8);
+        const bulbMat = new THREE.MeshBasicMaterial({
+          color: (i % 2 === 0) ? 0x00ffcc : 0x38bdf8,
+          transparent: true,
+          opacity: 0.9
+        });
+        const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+        bulb.position.set(0, 2.2, 0);
+        nodes[nodes.length - 1].add(bulb);
+      }
+
+      this.scene.add(stalkGroup);
+
+      this.kelpStalks.push({
+        group: stalkGroup,
+        nodes,
+        height,
+        phase: Math.random() * Math.PI * 2,
+        swaySpeed: 0.8 + Math.random() * 0.4,
+        amp: 0.12 + Math.random() * 0.08
+      });
+    }
+  }
+
+  initCausticGodRays() {
+    const b = this.bounds;
+    // Volumetric angled light beam ribbons
+    const rayGeo = new THREE.PlaneGeometry(16, b.y * 2 + 10);
+    const rayMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.045,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false
     });
+
+    this.godRays = [];
+    for (let i = 0; i < 6; i++) {
+      const ray = new THREE.Mesh(rayGeo, rayMat);
+      const rx = (i / 5 - 0.5) * (b.x * 1.4);
+      ray.position.set(rx, 0, -2.0 + Math.random() * 4.0);
+      ray.rotation.z = -0.25 + (Math.random() - 0.5) * 0.1;
+      this.scene.add(ray);
+      this.godRays.push({ mesh: ray, speed: 0.5 + Math.random() * 0.5, phase: Math.random() * Math.PI });
+    }
   }
 
   initMarineSnow() {
+    const b = this.bounds;
+    this.snowCount = 380; // Soft and gentle, not overwhelming
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(this.snowCount * 3);
     const speeds = new Float32Array(this.snowCount);
 
-    const b = this.bounds;
     for (let i = 0; i < this.snowCount; i++) {
       positions[i * 3 + 0] = (Math.random() * 2 - 1) * b.x;
       positions[i * 3 + 1] = (Math.random() * 2 - 1) * b.y;
       positions[i * 3 + 2] = (Math.random() * 2 - 1) * b.z;
-      speeds[i] = 0.2 + Math.random() * 0.6;
+      speeds[i] = 0.2 + Math.random() * 0.4;
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
     const mat = new THREE.PointsMaterial({
-      color: 0x73d2ff,
-      size: 0.35,
+      color: 0x38bdf8,
+      size: 0.25,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -112,9 +288,9 @@ export class Environment {
   initFoodSystem() {
     const foodGeo = new THREE.DodecahedronGeometry(0.3, 1);
     this.foodMat = new THREE.MeshBasicMaterial({
-      color: 0x1db968, // Soft organic bioluminescent green instead of harsh neon
+      color: 0x1db968,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.8,
       wireframe: false
     });
 
@@ -122,8 +298,8 @@ export class Environment {
     this.foodMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.scene.add(this.foodMesh);
 
-    // Seed initial food items
-    for (let i = 0; i < this.maxFood * 0.7; i++) {
+    // Seed initial food items inside the 2.5D tank volume
+    for (let i = 0; i < this.maxFood * 0.65; i++) {
       this.spawnFoodRandom();
     }
   }
@@ -135,28 +311,27 @@ export class Environment {
       position: new THREE.Vector3(
         (Math.random() * 2 - 1) * (b.x - 4),
         (Math.random() * 2 - 1) * (b.y - 4),
-        (Math.random() * 2 - 1) * (b.z - 4)
+        (Math.random() * 2 - 1) * (b.z - 2.5) // Thin tank depth
       ),
       phase: Math.random() * Math.PI * 2,
-      scale: 0.8 + Math.random() * 0.5
+      scale: 0.8 + Math.random() * 0.4
     });
   }
 
   spawnFoodCluster(center, count = 8) {
+    const b = this.bounds;
     for (let i = 0; i < count; i++) {
       if (this.foodItems.length >= this.maxFood) {
-        this.foodItems.shift(); // remove oldest if at max
+        this.foodItems.shift();
       }
       this.foodItems.push({
-        position: center.clone().add(
-          new THREE.Vector3(
-            (Math.random() - 0.5) * 5.0,
-            (Math.random() - 0.5) * 3.0,
-            (Math.random() - 0.5) * 5.0
-          )
+        position: new THREE.Vector3(
+          Math.max(-b.x + 3, Math.min(b.x - 3, center.x + (Math.random() - 0.5) * 6.0)),
+          Math.max(-b.y + 3, Math.min(b.y - 3, center.y + (Math.random() - 0.5) * 5.0)),
+          Math.max(-b.z + 1, Math.min(b.z - 1, (Math.random() - 0.5) * 4.0))
         ),
         phase: Math.random() * Math.PI * 2,
-        scale: 0.9 + Math.random() * 0.4
+        scale: 0.85 + Math.random() * 0.4
       });
     }
   }
@@ -177,7 +352,7 @@ export class Environment {
     return closest;
   }
 
-  consumeFoodNear(pos, radius = 1.8) {
+  consumeFoodNear(pos, radius = 2.0) {
     const rSq = radius * radius;
     let count = 0;
 
@@ -203,18 +378,17 @@ export class Environment {
     for (let i = 0; i < this.maxFood; i++) {
       if (i < this.foodItems.length) {
         const f = this.foodItems[i];
-        // Organic drift
+        // Organic drift mostly in X and Y
         f.position.x += Math.sin(elapsed * 0.8 + f.phase) * dt * 0.6;
-        f.position.y += Math.cos(elapsed * 0.6 + f.phase * 1.5) * dt * 0.5;
-        f.position.z += Math.sin(elapsed * 0.7 + f.phase * 2.0) * dt * 0.6;
+        f.position.y += Math.cos(elapsed * 0.6 + f.phase * 1.5) * dt * 0.4;
+        f.position.z += Math.sin(elapsed * 0.5 + f.phase) * dt * 0.2;
 
-        // Keep inside bounds
-        if (f.position.x > b.x) f.position.x = -b.x;
-        if (f.position.x < -b.x) f.position.x = b.x;
-        if (f.position.y > b.y) f.position.y = -b.y;
-        if (f.position.y < -b.y) f.position.y = b.y;
-        if (f.position.z > b.z) f.position.z = -b.z;
-        if (f.position.z < -b.z) f.position.z = b.z;
+        if (f.position.x > b.x - 2) f.position.x = -b.x + 2;
+        if (f.position.x < -b.x + 2) f.position.x = b.x - 2;
+        if (f.position.y > b.y - 2) f.position.y = -b.y + 2;
+        if (f.position.y < -b.y + 2) f.position.y = b.y - 2;
+        if (f.position.z > b.z - 1) f.position.z = -b.z + 1;
+        if (f.position.z < -b.z + 1) f.position.z = b.z - 1;
 
         dummy.position.copy(f.position);
         dummy.rotation.x = elapsed + f.phase;
@@ -224,7 +398,6 @@ export class Environment {
         dummy.updateMatrix();
         this.foodMesh.setMatrixAt(i, dummy.matrix);
       } else {
-        // Hide unused instances
         dummy.position.set(0, -9999, 0);
         dummy.scale.set(0, 0, 0);
         dummy.updateMatrix();
@@ -233,12 +406,29 @@ export class Environment {
     }
     this.foodMesh.instanceMatrix.needsUpdate = true;
 
-    // 3. Animate Marine Snow Particulates
+    // 3. Animate Procedural Kelp Swaying in Ocean Current
+    this.kelpStalks.forEach(stalk => {
+      const swayTime = elapsed * stalk.swaySpeed + stalk.phase;
+      stalk.nodes.forEach((node, idx) => {
+        // Upper nodes sway more with traveling harmonic wave
+        const wave = Math.sin(swayTime - idx * 0.28) * stalk.amp;
+        node.rotation.z = wave;
+        node.rotation.x = Math.cos(swayTime * 0.7 - idx * 0.2) * (stalk.amp * 0.35);
+      });
+    });
+
+    // 4. Animate Volumetric God Rays
+    this.godRays.forEach(ray => {
+      ray.mesh.position.x += Math.sin(elapsed * ray.speed + ray.phase) * dt * 0.8;
+      ray.mesh.material.opacity = 0.035 + Math.sin(elapsed * 1.5 + ray.phase) * 0.015;
+    });
+
+    // 5. Animate Marine Snow Particulates
     const positions = this.marineSnow.geometry.attributes.position.array;
     for (let i = 0; i < this.snowCount; i++) {
       const idx = i * 3;
-      positions[idx + 1] -= this.snowSpeeds[i] * dt * 2.5; // Drift downwards
-      positions[idx + 0] += Math.sin(elapsed * 0.5 + i) * dt * 0.3;
+      positions[idx + 1] -= this.snowSpeeds[i] * dt * 2.0;
+      positions[idx + 0] += Math.sin(elapsed * 0.5 + i) * dt * 0.25;
 
       if (positions[idx + 1] < -b.y) {
         positions[idx + 1] = b.y;
@@ -247,9 +437,5 @@ export class Environment {
       }
     }
     this.marineSnow.geometry.attributes.position.needsUpdate = true;
-
-    // 4. Subtle shimmer on caustic light
-    this.spotLight.position.x = Math.sin(elapsed * 0.5) * 8.0;
-    this.spotLight.position.z = Math.cos(elapsed * 0.4) * 8.0;
   }
 }

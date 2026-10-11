@@ -27,10 +27,10 @@ export class Creature {
     this.velocity = new THREE.Vector3();
     this.quaternion = new THREE.Quaternion();
     this.speed = 0.0;
-    this.maxSpeed = traits.maxSpeed;
-    this.heading = new THREE.Vector3(0, 0, 1);
+    this.headingAngle = Math.random() * Math.PI * 2;
+    this.heading = new THREE.Vector3(Math.cos(this.headingAngle), Math.sin(this.headingAngle), 0);
     this.pitch = 0.0;
-    this.yaw = Math.random() * Math.PI * 2;
+    this.yaw = 0.0;
     this.roll = 0.0;
 
     // Internal biological clock
@@ -368,33 +368,41 @@ export class Creature {
     const pitchCmd = motor[2];
     const tailBurst = motor[3];
 
-    // 3. Differential Swimming Kinematics
-    const forwardThrust = Math.max(0.1, (thrustL + thrustR) * 0.5 + tailBurst * 0.8);
-    const yawTorque = (thrustL - thrustR) * 2.8;
-    const pitchTorque = pitchCmd * 2.2;
+    // 3. 2.5D Tank Swimming Kinematics
+    const forwardThrust = Math.max(0.12, (thrustL + thrustR) * 0.5 + tailBurst * 0.7);
+    const steerRate = (thrustL - thrustR) * 3.2; // Steer left / right in XY plane
+    const pitchRate = pitchCmd * 2.2;            // Pitch up / down in XY plane
 
-    this.yaw += yawTorque * dt;
-    this.pitch = THREE.MathUtils.lerp(this.pitch, pitchTorque * 0.6, dt * 3.0);
-    this.roll = THREE.MathUtils.lerp(this.roll, -yawTorque * 0.4, dt * 4.0); // Bank into turns
+    this.headingAngle += steerRate * dt;
 
-    // Orientation quaternion
-    const euler = new THREE.Euler(this.pitch, this.yaw, this.roll, 'YXZ');
-    this.quaternion.setFromEuler(euler);
-    this.mesh.quaternion.copy(this.quaternion);
+    // Heading vector predominantly in XY plane with subtle organic Z depth drift
+    const zDrift = Math.sin(this.clock * 0.7) * 0.2;
+    const targetHeading = new THREE.Vector3(
+      Math.cos(this.headingAngle),
+      Math.sin(this.headingAngle) + pitchRate * 0.45,
+      zDrift
+    ).normalize();
 
-    this.heading.set(0, 0, 1).applyQuaternion(this.quaternion).normalize();
+    this.heading.lerp(targetHeading, dt * 5.5).normalize();
+
+    // Smoothly orient 3D mesh along heading
+    const lookTarget = this.position.clone().add(this.heading);
+    this.mesh.lookAt(lookTarget);
 
     // Accelerate along heading
     const targetSpeed = forwardThrust * this.maxSpeed;
-    this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, dt * 3.5);
+    this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, dt * 3.8);
     this.velocity.copy(this.heading).multiplyScalar(this.speed);
 
-    // Soft Boundary Repulsion (keep inside aquarium bounds)
+    // 2.5D Tank Boundary Repulsion & Z-Depth Centering
     const bounds = environment.bounds;
     const boundaryPush = new THREE.Vector3();
-    if (Math.abs(this.position.x) > bounds.x) boundaryPush.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - bounds.x) * 4.0;
-    if (Math.abs(this.position.y) > bounds.y) boundaryPush.y = -Math.sign(this.position.y) * (Math.abs(this.position.y) - bounds.y) * 4.0;
-    if (Math.abs(this.position.z) > bounds.z) boundaryPush.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - bounds.z) * 4.0;
+    if (Math.abs(this.position.x) > bounds.x - 3) boundaryPush.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - (bounds.x - 3)) * 6.0;
+    if (Math.abs(this.position.y) > bounds.y - 3) boundaryPush.y = -Math.sign(this.position.y) * (Math.abs(this.position.y) - (bounds.y - 3)) * 6.0;
+    // Stronger Z containment so they stay within the cross-section
+    if (Math.abs(this.position.z) > bounds.z - 1.5) boundaryPush.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - (bounds.z - 1.5)) * 12.0;
+    // Continuous gentle spring toward Z = 0
+    boundaryPush.z -= this.position.z * 1.8;
     this.velocity.addScaledVector(boundaryPush, dt);
 
     this.position.addScaledVector(this.velocity, dt);

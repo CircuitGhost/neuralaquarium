@@ -17,34 +17,41 @@ class SimulationApp {
 
     // 1. Scene, Camera, Renderer
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020712);
-    this.scene.fog = new THREE.FogExp2(0x020712, 0.012);
+    this.scene.background = new THREE.Color(0x020a17);
+    this.scene.fog = new THREE.FogExp2(0x020a17, 0.005);
 
-    this.camera = new THREE.PerspectiveCamera(55, this.width / this.height, 0.1, 400);
-    this.camera.position.set(0, 15, 45);
+    this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 400);
+    this.camera.position.set(0, 0, 68);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(this.width, this.height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.15;
     this.container.appendChild(this.renderer.domElement);
 
-    // 2. Camera Controls & Camera Modes (Free, Chase, Macro)
+    // 2. 2.5D Aquarium Orbit & Pan Controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.06;
-    this.controls.maxDistance = 220;
-    this.controls.minDistance = 3.5;
+    this.controls.dampingFactor = 0.07;
+    this.controls.screenSpacePanning = true;
+    this.controls.maxDistance = 140;
+    this.controls.minDistance = 6.0;
+
+    // Constrain orbit angles to aquarium front-view window (allows tilt parallax without flipping)
+    this.controls.minAzimuthAngle = -0.45;
+    this.controls.maxAzimuthAngle = 0.45;
+    this.controls.minPolarAngle = Math.PI * 0.38;
+    this.controls.maxPolarAngle = Math.PI * 0.62;
 
     this.cameraController = {
-      mode: 'track', // 'track' (Smooth Orbit Track), 'macro', 'chase'
+      mode: 'track', // 'track' (Smooth 2.5D Track), 'macro'
       targetLookAt: new THREE.Vector3(),
       targetCamPos: new THREE.Vector3(),
       zoom: (delta) => {
         const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
         const dist = dir.length();
-        const newDist = Math.max(3.5, Math.min(220, dist + delta));
+        const newDist = Math.max(6.0, Math.min(140, dist + delta));
         dir.normalize().multiplyScalar(newDist);
         this.camera.position.copy(this.controls.target).add(dir);
       }
@@ -57,7 +64,7 @@ class SimulationApp {
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(this.width, this.height),
-      1.25, // strength
+      1.2,  // strength
       0.45, // radius
       0.35  // threshold
     );
@@ -66,9 +73,9 @@ class SimulationApp {
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
 
-    // 4. Instantiate Ecosystem & Evolution
+    // 4. Instantiate 2.5D Aquarium Ecosystem & Evolution
     this.environment = new Environment(this.scene);
-    this.population = new PopulationManager(this.scene, this.environment, 18);
+    this.population = new PopulationManager(this.scene, this.environment, 16);
     this.ui = new UIManager(this.population, this.environment, this.cameraController);
 
     // 5. Interaction Raycaster & Hover State
@@ -123,9 +130,9 @@ class SimulationApp {
 
     // Pointer Down (Select Specimen or Drop Food)
     this.renderer.domElement.addEventListener('pointerdown', (e) => {
-      // Shift-Click drops food cluster at depth
+      // Shift-Click drops food cluster at depth Z = 0 plane
       if (e.shiftKey) {
-        const dropPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const dropPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
         const intersectPoint = new THREE.Vector3();
         this.raycaster.ray.intersectPlane(dropPlane, intersectPoint);
         this.environment.spawnFoodCluster(intersectPoint, 10);
@@ -164,22 +171,16 @@ class SimulationApp {
         const center = this.population.selectedCreature ? this.population.selectedCreature.position : new THREE.Vector3();
         this.environment.spawnFoodCluster(center, 10);
       } else if (e.key === 'b' || e.key === 'B') {
-        // Toggle Bullet Time
         const btnBullet = document.getElementById('btn-bullet-time');
         if (btnBullet) btnBullet.click();
       } else if (e.key === '1') {
-        // Smooth Track (Zero Spin)
         this.setCameraMode('track');
       } else if (e.key === '2') {
-        // Macro Studio
         this.setCameraMode('macro');
-      } else if (e.key === '3') {
-        // Drone Chase Cam
-        this.setCameraMode('chase');
       } else if (e.key === '+' || e.key === '=') {
-        this.cameraController.zoom(-12);
+        this.cameraController.zoom(-10);
       } else if (e.key === '-' || e.key === '_') {
-        this.cameraController.zoom(12);
+        this.cameraController.zoom(10);
       } else if (e.key === 'c' || e.key === 'C') {
         this.population.cloneSelected(3);
       } else if (e.code === 'Space') {
@@ -210,41 +211,26 @@ class SimulationApp {
       this.environment.update(dt, elapsed);
     }
 
-    // Camera Rig & Tracking Controller (Smooth & Non-Disorienting)
+    // Camera Rig & Tracking Controller (Smooth 2.5D Translation)
     const selected = this.population.selectedCreature;
     if (selected && !selected.isDead) {
-      if (this.cameraController.mode === 'chase') {
-        // Inertially damped chase cam: level horizon, gentle trailing behind
-        const currentOffset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
-        const dist = Math.max(9.0, Math.min(30.0, currentOffset.length()));
-
-        const lookTarget = selected.position.clone().addScaledVector(selected.heading, 0.8);
-        this.controls.target.lerp(lookTarget, 0.08);
-
-        // Smooth behind vector: locked pitch elevation, gentle yaw
-        const behind = selected.heading.clone().multiplyScalar(-1);
-        behind.y = 0.4;
-        behind.normalize().multiplyScalar(dist);
-
-        const desiredCamPos = this.controls.target.clone().add(behind);
-        this.camera.position.lerp(desiredCamPos, 0.035);
-      } else if (this.cameraController.mode === 'macro') {
-        // Macro studio: lock target to head and translate camera together (ZERO spin)
-        const headPos = selected.position.clone().addScaledVector(selected.heading, 0.6);
-        const targetDelta = new THREE.Vector3().subVectors(headPos, this.controls.target);
+      if (this.cameraController.mode === 'macro') {
+        // Macro studio: lock target to head and maintain close distance
+        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, selected.position.z);
+        const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
         const step = targetDelta.multiplyScalar(0.08);
         this.controls.target.add(step);
         this.camera.position.add(step);
 
-        // Gently maintain close macro distance without rotating viewing angle
         const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
-        if (offset.length() > 5.5) {
-          offset.setLength(5.5);
+        if (offset.length() > 9.0) {
+          offset.setLength(9.0);
           this.camera.position.copy(this.controls.target).add(offset);
         }
       } else {
-        // 'track' (Default Smooth Orbit): Translates camera along with creature with ZERO horizon spin!
-        const targetDelta = new THREE.Vector3().subVectors(selected.position, this.controls.target);
+        // 'track' (Default 2.5D Smooth Track): Translates camera smoothly in XY plane with ZERO spin
+        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, 0);
+        const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
         const step = targetDelta.multiplyScalar(0.08);
         this.controls.target.add(step);
         this.camera.position.add(step);
