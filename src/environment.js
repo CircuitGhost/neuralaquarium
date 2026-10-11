@@ -23,23 +23,23 @@ export class Environment {
   }
 
   initLighting() {
-    // Deep Ocean Ambient Light
-    this.ambientLight = new THREE.AmbientLight(0x0c3a66, 2.5);
+    // Deep Ocean Ambient Light (rich dark navy base)
+    this.ambientLight = new THREE.AmbientLight(0x051b30, 0.85);
     this.scene.add(this.ambientLight);
 
-    // Front View Fill Light (illuminates creatures directly towards camera)
-    this.frontLight = new THREE.DirectionalLight(0xe0f2fe, 3.0);
-    this.frontLight.position.set(0, 10, 60);
+    // Front View Fill Light (soft illumination without glare)
+    this.frontLight = new THREE.DirectionalLight(0x93c5fd, 0.9);
+    this.frontLight.position.set(0, 5, 50);
     this.scene.add(this.frontLight);
 
-    // Overhead Sunlight penetrating the surface
-    this.sunLight = new THREE.DirectionalLight(0x7dd3fc, 3.5);
-    this.sunLight.position.set(10, 60, 25);
+    // Overhead Sunlight penetrating the water surface (subtle cyan/sky tint)
+    this.sunLight = new THREE.DirectionalLight(0x38bdf8, 1.2);
+    this.sunLight.position.set(10, 45, 20);
     this.scene.add(this.sunLight);
 
-    // Bottom Ambient bounce light from sand
-    this.sandBounce = new THREE.DirectionalLight(0x0284c7, 1.5);
-    this.sandBounce.position.set(0, -40, 20);
+    // Bottom Ambient bounce light from substrate
+    this.sandBounce = new THREE.DirectionalLight(0x0284c7, 0.35);
+    this.sandBounce.position.set(0, -35, 15);
     this.scene.add(this.sandBounce);
   }
 
@@ -53,10 +53,10 @@ export class Environment {
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#0284c7');   // Luminous surface blue
-    grad.addColorStop(0.35, '#0369a1'); // Ocean cerulean
-    grad.addColorStop(0.7, '#075985');  // Deep blue
-    grad.addColorStop(1.0, '#041d33');  // Abyssal navy
+    grad.addColorStop(0, '#0369a1');    // Surface ocean cerulean
+    grad.addColorStop(0.25, '#075985'); // Midwater deep blue
+    grad.addColorStop(0.65, '#082f49'); // Abyssal navy
+    grad.addColorStop(1.0, '#021226');  // Deep trench midnight
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
@@ -73,7 +73,7 @@ export class Environment {
     const lineMat = new THREE.LineBasicMaterial({
       color: 0x0284c7,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending
     });
     this.boundaryBox = new THREE.LineSegments(edges, lineMat);
@@ -82,10 +82,10 @@ export class Environment {
     // 3. Water Surface Meniscus (Shimmering Top Plane)
     const surfGeo = new THREE.PlaneGeometry(b.x * 2, b.z * 2);
     this.surfMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
+      color: 0x0284c7,
       transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.12,
+      blending: THREE.NormalBlending,
       side: THREE.DoubleSide
     });
     const surface = new THREE.Mesh(surfGeo, this.surfMat);
@@ -112,9 +112,9 @@ export class Environment {
     floorGeo.computeVertexNormals();
 
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x093047,
-      roughness: 0.8,
-      metalness: 0.1
+      color: 0x051b2c,
+      roughness: 0.88,
+      metalness: 0.05
     });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     floorMesh.position.set(0, -b.y - 1.5, 0);
@@ -122,9 +122,9 @@ export class Environment {
 
     // Decorative Sea Rocks & Pebbles along substrate
     const rockMat = new THREE.MeshStandardMaterial({
-      color: 0x052033,
-      roughness: 0.7,
-      metalness: 0.2
+      color: 0x031422,
+      roughness: 0.8,
+      metalness: 0.1
     });
 
     const rockGeos = [
@@ -165,11 +165,11 @@ export class Environment {
       const nodes = [];
       let parentObj = stalkGroup;
 
-      const kelpColor = new THREE.Color().setHSL(0.42 + Math.random() * 0.08, 0.75, 0.28 + (z + b.z) * 0.02);
+      const kelpColor = new THREE.Color().setHSL(0.42 + Math.random() * 0.08, 0.72, 0.22 + (z + b.z) * 0.012);
       const kelpMat = new THREE.MeshStandardMaterial({
         color: kelpColor,
-        roughness: 0.35,
-        metalness: 0.1,
+        roughness: 0.5,
+        metalness: 0.05,
         side: THREE.DoubleSide
       });
 
@@ -212,7 +212,7 @@ export class Environment {
         const bulbMat = new THREE.MeshBasicMaterial({
           color: (i % 2 === 0) ? 0x00ffcc : 0x38bdf8,
           transparent: true,
-          opacity: 0.9
+          opacity: 0.75
         });
         const bulb = new THREE.Mesh(bulbGeo, bulbMat);
         bulb.position.set(0, 2.2, 0);
@@ -237,9 +237,9 @@ export class Environment {
     // Volumetric angled light beam ribbons
     const rayGeo = new THREE.PlaneGeometry(16, b.y * 2 + 10);
     const rayMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
+      color: 0x0284c7,
       transparent: true,
-      opacity: 0.045,
+      opacity: 0.012,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false
@@ -258,7 +258,7 @@ export class Environment {
 
   initMarineSnow() {
     const b = this.bounds;
-    this.snowCount = 380; // Soft and gentle, not overwhelming
+    this.snowCount = 340;
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(this.snowCount * 3);
     const speeds = new Float32Array(this.snowCount);
@@ -274,9 +274,9 @@ export class Environment {
 
     const mat = new THREE.PointsMaterial({
       color: 0x38bdf8,
-      size: 0.25,
+      size: 0.18,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -421,7 +421,7 @@ export class Environment {
     // 4. Animate Volumetric God Rays
     this.godRays.forEach(ray => {
       ray.mesh.position.x += Math.sin(elapsed * ray.speed + ray.phase) * dt * 0.8;
-      ray.mesh.material.opacity = 0.035 + Math.sin(elapsed * 1.5 + ray.phase) * 0.015;
+      ray.mesh.material.opacity = 0.01 + Math.sin(elapsed * 1.5 + ray.phase) * 0.005;
     });
 
     // 5. Animate Marine Snow Particulates

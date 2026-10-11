@@ -60,12 +60,12 @@ export class Creature {
     this.headMat = new THREE.MeshPhysicalMaterial({
       color: this.color,
       emissive: this.emissiveColor,
-      emissiveIntensity: 0.5,
+      emissiveIntensity: 0.15,
       transparent: true,
-      opacity: 0.82,
-      roughness: 0.25,
-      metalness: 0.1,
-      transmission: 0.25,
+      opacity: 0.85,
+      roughness: 0.35,
+      metalness: 0.05,
+      transmission: 0.2,
       ior: 1.33,
       thickness: 1.0
     });
@@ -588,9 +588,9 @@ export class Creature {
       this.fitness += eatenList * 120.0;
 
       // Glow pulse body on feeding
-      this.headMat.emissiveIntensity = 0.9;
+      this.headMat.emissiveIntensity = 0.55;
     } else {
-      this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.25, 0.08);
+      this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, 0.08);
     }
   }
 

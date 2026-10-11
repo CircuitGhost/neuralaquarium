@@ -81,13 +81,17 @@ export class UIManager {
       });
     }
 
-    // 3. Camera Mode Buttons (Free, Chase, Macro)
+    // 3. Camera Mode Buttons (Track, Free, Macro)
     const camBtns = document.querySelectorAll('.btn-cam-mode');
     camBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        camBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.cam.mode = btn.dataset.mode; // 'free', 'chase', 'macro'
+        if (this.cam.setMode) {
+          this.cam.setMode(btn.dataset.mode);
+        } else {
+          camBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          this.cam.mode = btn.dataset.mode;
+        }
       });
     });
 
@@ -95,20 +99,26 @@ export class UIManager {
     const btnZoomIn = document.getElementById('btn-zoom-in');
     const btnZoomOut = document.getElementById('btn-zoom-out');
     if (btnZoomIn) {
-      btnZoomIn.addEventListener('click', () => this.cam.zoom(-12));
+      btnZoomIn.addEventListener('click', () => this.cam.zoom(-10));
     }
     if (btnZoomOut) {
-      btnZoomOut.addEventListener('click', () => this.cam.zoom(12));
+      btnZoomOut.addEventListener('click', () => this.cam.zoom(10));
     }
 
     // 5. Specimen Cycling (Prev / Next)
     const btnPrev = document.getElementById('btn-spec-prev');
     const btnNext = document.getElementById('btn-spec-next');
     if (btnPrev) {
-      btnPrev.addEventListener('click', () => this.pop.cycleSpecimen(-1));
+      btnPrev.addEventListener('click', () => {
+        this.pop.cycleSpecimen(-1);
+        if (this.cam.setMode) this.cam.setMode('track');
+      });
     }
     if (btnNext) {
-      btnNext.addEventListener('click', () => this.pop.cycleSpecimen(1));
+      btnNext.addEventListener('click', () => {
+        this.pop.cycleSpecimen(1);
+        if (this.cam.setMode) this.cam.setMode('track');
+      });
     }
 
     // 6. Champion Teleport Buttons
@@ -118,19 +128,28 @@ export class UIManager {
     if (btnAlpha) {
       btnAlpha.addEventListener('click', () => {
         const c = this.pop.getAlphaHunter();
-        if (c) this.pop.selectCreatureById(c.id);
+        if (c) {
+          this.pop.selectCreatureById(c.id);
+          if (this.cam.setMode) this.cam.setMode('track');
+        }
       });
     }
     if (btnElder) {
       btnElder.addEventListener('click', () => {
         const c = this.pop.getElder();
-        if (c) this.pop.selectCreatureById(c.id);
+        if (c) {
+          this.pop.selectCreatureById(c.id);
+          if (this.cam.setMode) this.cam.setMode('track');
+        }
       });
     }
     if (btnFast) {
       btnFast.addEventListener('click', () => {
         const c = this.pop.getFastest();
-        if (c) this.pop.selectCreatureById(c.id);
+        if (c) {
+          this.pop.selectCreatureById(c.id);
+          if (this.cam.setMode) this.cam.setMode('track');
+        }
       });
     }
 

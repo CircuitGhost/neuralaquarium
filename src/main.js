@@ -17,8 +17,8 @@ class SimulationApp {
 
     // 1. Scene, Camera, Renderer
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020a17);
-    this.scene.fog = new THREE.FogExp2(0x020a17, 0.005);
+    this.scene.background = new THREE.Color(0x010814); // Deep abyssal navy
+    this.scene.fog = new THREE.FogExp2(0x010814, 0.0035);
 
     this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 400);
     this.camera.position.set(0, 0, 68);
@@ -27,27 +27,36 @@ class SimulationApp {
     this.renderer.setSize(this.width, this.height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.0;
     this.container.appendChild(this.renderer.domElement);
 
-    // 2. 2.5D Aquarium Orbit & Pan Controls
+    // 2. 2.5D Aquarium Pan & Zoom Controls (Left Click = 2D Pan up/down/left/right)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.07;
+    this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
     this.controls.maxDistance = 140;
     this.controls.minDistance = 6.0;
 
-    // Constrain orbit angles to aquarium front-view window (allows tilt parallax without flipping)
-    this.controls.minAzimuthAngle = -0.45;
-    this.controls.maxAzimuthAngle = 0.45;
-    this.controls.minPolarAngle = Math.PI * 0.38;
-    this.controls.maxPolarAngle = Math.PI * 0.62;
+    // Direct 2D navigation: Left-drag and touch pan horizontally & vertically
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN
+    };
+    this.controls.touches = {
+      ONE: THREE.TOUCH.PAN,
+      TWO: THREE.TOUCH.DOLLY_PAN
+    };
+
+    // Lock rotation to keep a clean, crisp 2D aquarium viewport without disorienting tilt
+    this.controls.enableRotate = false;
 
     this.cameraController = {
-      mode: 'track', // 'track' (Smooth 2.5D Track), 'macro'
+      mode: 'track', // 'track' (Follow Fish), 'free' (Manual 2D Pan), 'macro'
       targetLookAt: new THREE.Vector3(),
       targetCamPos: new THREE.Vector3(),
+      setMode: (mode) => this.setCameraMode(mode),
       zoom: (delta) => {
         const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
         const dist = dir.length();
@@ -57,16 +66,23 @@ class SimulationApp {
       }
     };
 
-    // 3. Post-Processing Pipeline (Dreamy Bioluminescent Bloom)
+    // Auto-switch to 'free' mode when user clicks & drags to pan so tracking doesn't fight them
+    this.controls.addEventListener('start', () => {
+      if (this.cameraController.mode === 'track') {
+        this.setCameraMode('free');
+      }
+    });
+
+    // 3. Post-Processing Pipeline (Dreamy Bioluminescent Bloom with high threshold to prevent white wash)
     this.composer = new EffectComposer(this.renderer);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(this.width, this.height),
-      1.2,  // strength
-      0.45, // radius
-      0.35  // threshold
+      0.55, // strength (crisp subtle glow, eliminates white wash)
+      0.25, // radius
+      0.82  // threshold (only sparks, electric neurons & emissive bulbs bloom)
     );
     this.composer.addPass(this.bloomPass);
 
@@ -145,6 +161,7 @@ class SimulationApp {
         }
         this.population.selectedCreature = this.hoveredCreature;
         this.hoveredCreature.isSelected = true;
+        this.setCameraMode('track');
 
         // Auto trigger bullet-time for observation
         if (!this.ui.bulletTime) {
@@ -163,10 +180,13 @@ class SimulationApp {
       if (e.code === 'Tab') {
         e.preventDefault();
         this.population.cycleSpecimen(e.shiftKey ? -1 : 1);
+        this.setCameraMode('track');
       } else if (e.key === '[' || e.key === '{') {
         this.population.cycleSpecimen(-1);
+        this.setCameraMode('track');
       } else if (e.key === ']' || e.key === '}') {
         this.population.cycleSpecimen(1);
+        this.setCameraMode('track');
       } else if (e.key === 'f' || e.key === 'F') {
         const center = this.population.selectedCreature ? this.population.selectedCreature.position : new THREE.Vector3();
         this.environment.spawnFoodCluster(center, 10);
@@ -177,6 +197,8 @@ class SimulationApp {
         this.setCameraMode('track');
       } else if (e.key === '2') {
         this.setCameraMode('macro');
+      } else if (e.key === '3') {
+        this.setCameraMode('free');
       } else if (e.key === '+' || e.key === '=') {
         this.cameraController.zoom(-10);
       } else if (e.key === '-' || e.key === '_') {
@@ -227,15 +249,22 @@ class SimulationApp {
           offset.setLength(9.0);
           this.camera.position.copy(this.controls.target).add(offset);
         }
-      } else {
-        // 'track' (Default 2.5D Smooth Track): Translates camera smoothly in XY plane with ZERO spin
+      } else if (this.cameraController.mode === 'track') {
+        // 'track' (Follow Fish): Translates camera smoothly in XY plane with ZERO spin
         const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, 0);
         const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
         const step = targetDelta.multiplyScalar(0.08);
         this.controls.target.add(step);
         this.camera.position.add(step);
       }
+      // 'free' mode: camera does not translate toward fish, user pans around freely!
     }
+
+    // Soft pan boundary limits so user stays framed inside the aquarium
+    const maxPanX = this.environment.bounds.x + 8;
+    const maxPanY = this.environment.bounds.y + 6;
+    this.controls.target.x = THREE.MathUtils.clamp(this.controls.target.x, -maxPanX, maxPanX);
+    this.controls.target.y = THREE.MathUtils.clamp(this.controls.target.y, -maxPanY, maxPanY);
 
     // Safety fallback: ensure camera and controls target are always valid
     if (!Number.isFinite(this.camera.position.x) || !Number.isFinite(this.controls.target.x)) {
