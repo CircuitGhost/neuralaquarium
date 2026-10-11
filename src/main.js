@@ -38,7 +38,7 @@ class SimulationApp {
     this.controls.minDistance = 3.5;
 
     this.cameraController = {
-      mode: 'chase', // 'free', 'chase', 'macro'
+      mode: 'track', // 'track' (Smooth Orbit Track), 'macro', 'chase'
       targetLookAt: new THREE.Vector3(),
       targetCamPos: new THREE.Vector3(),
       zoom: (delta) => {
@@ -168,14 +168,14 @@ class SimulationApp {
         const btnBullet = document.getElementById('btn-bullet-time');
         if (btnBullet) btnBullet.click();
       } else if (e.key === '1') {
-        // Free Orbit
-        this.setCameraMode('free');
+        // Smooth Track (Zero Spin)
+        this.setCameraMode('track');
       } else if (e.key === '2') {
-        // Chase Cam
-        this.setCameraMode('chase');
-      } else if (e.key === '3') {
         // Macro Studio
         this.setCameraMode('macro');
+      } else if (e.key === '3') {
+        // Drone Chase Cam
+        this.setCameraMode('chase');
       } else if (e.key === '+' || e.key === '=') {
         this.cameraController.zoom(-12);
       } else if (e.key === '-' || e.key === '_') {
@@ -210,22 +210,44 @@ class SimulationApp {
       this.environment.update(dt, elapsed);
     }
 
-    // Camera Rig & Tracking Controller
+    // Camera Rig & Tracking Controller (Smooth & Non-Disorienting)
     const selected = this.population.selectedCreature;
     if (selected && !selected.isDead) {
       if (this.cameraController.mode === 'chase') {
-        const desiredPos = selected.getChaseCamPos(new THREE.Vector3());
-        const desiredLook = selected.getLookAtPos(new THREE.Vector3());
-        this.camera.position.lerp(desiredPos, 0.08);
-        this.controls.target.lerp(desiredLook, 0.1);
+        // Inertially damped chase cam: level horizon, gentle trailing behind
+        const currentOffset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+        const dist = Math.max(9.0, Math.min(30.0, currentOffset.length()));
+
+        const lookTarget = selected.position.clone().addScaledVector(selected.heading, 0.8);
+        this.controls.target.lerp(lookTarget, 0.08);
+
+        // Smooth behind vector: locked pitch elevation, gentle yaw
+        const behind = selected.heading.clone().multiplyScalar(-1);
+        behind.y = 0.4;
+        behind.normalize().multiplyScalar(dist);
+
+        const desiredCamPos = this.controls.target.clone().add(behind);
+        this.camera.position.lerp(desiredCamPos, 0.035);
       } else if (this.cameraController.mode === 'macro') {
-        const desiredPos = selected.getMacroCamPos(new THREE.Vector3());
-        const desiredLook = selected.getLookAtPos(new THREE.Vector3());
-        this.camera.position.lerp(desiredPos, 0.1);
-        this.controls.target.lerp(desiredLook, 0.15);
+        // Macro studio: lock target to head and translate camera together (ZERO spin)
+        const headPos = selected.position.clone().addScaledVector(selected.heading, 0.6);
+        const targetDelta = new THREE.Vector3().subVectors(headPos, this.controls.target);
+        const step = targetDelta.multiplyScalar(0.08);
+        this.controls.target.add(step);
+        this.camera.position.add(step);
+
+        // Gently maintain close macro distance without rotating viewing angle
+        const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+        if (offset.length() > 5.5) {
+          offset.setLength(5.5);
+          this.camera.position.copy(this.controls.target).add(offset);
+        }
       } else {
-        // Free Orbit Mode: smoothly tracks center of selected creature
-        this.controls.target.lerp(selected.position, 0.06);
+        // 'track' (Default Smooth Orbit): Translates camera along with creature with ZERO horizon spin!
+        const targetDelta = new THREE.Vector3().subVectors(selected.position, this.controls.target);
+        const step = targetDelta.multiplyScalar(0.08);
+        this.controls.target.add(step);
+        this.camera.position.add(step);
       }
     }
 
