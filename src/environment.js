@@ -226,8 +226,8 @@ export class Environment {
         nodes,
         height,
         phase: Math.random() * Math.PI * 2,
-        swaySpeed: 0.8 + Math.random() * 0.4,
-        amp: 0.12 + Math.random() * 0.08
+        swaySpeed: 0.28 + Math.random() * 0.14,
+        amp: 0.08 + Math.random() * 0.05
       });
     }
   }
@@ -252,7 +252,7 @@ export class Environment {
       ray.position.set(rx, 0, -2.0 + Math.random() * 4.0);
       ray.rotation.z = -0.25 + (Math.random() - 0.5) * 0.1;
       this.scene.add(ray);
-      this.godRays.push({ mesh: ray, speed: 0.5 + Math.random() * 0.5, phase: Math.random() * Math.PI });
+      this.godRays.push({ mesh: ray, speed: 0.18 + Math.random() * 0.12, phase: Math.random() * Math.PI });
     }
   }
 
@@ -379,10 +379,10 @@ export class Environment {
     for (let i = 0; i < this.maxFood; i++) {
       if (i < this.foodItems.length) {
         const f = this.foodItems[i];
-        // Organic drift mostly in X and Y
-        f.position.x += Math.sin(elapsed * 0.8 + f.phase) * dt * 0.6;
-        f.position.y += Math.cos(elapsed * 0.6 + f.phase * 1.5) * dt * 0.4;
-        f.position.z += Math.sin(elapsed * 0.5 + f.phase) * dt * 0.2;
+        // Organic tranquil drift
+        f.position.x += Math.sin(elapsed * 0.3 + f.phase) * dt * 0.25;
+        f.position.y += Math.cos(elapsed * 0.25 + f.phase * 1.2) * dt * 0.18;
+        f.position.z += Math.sin(elapsed * 0.2 + f.phase) * dt * 0.1;
 
         if (f.position.x > b.x - 2) f.position.x = -b.x + 2;
         if (f.position.x < -b.x + 2) f.position.x = b.x - 2;
@@ -392,9 +392,9 @@ export class Environment {
         if (f.position.z < -b.z + 1) f.position.z = b.z - 1;
 
         dummy.position.copy(f.position);
-        dummy.rotation.x = elapsed + f.phase;
-        dummy.rotation.y = elapsed * 1.2;
-        const pulse = f.scale * (1.0 + Math.sin(elapsed * 3.0 + f.phase) * 0.2);
+        dummy.rotation.x = elapsed * 0.3 + f.phase;
+        dummy.rotation.y = elapsed * 0.25;
+        const pulse = f.scale * (1.0 + Math.sin(elapsed * 1.2 + f.phase) * 0.12);
         dummy.scale.set(pulse, pulse, pulse);
         dummy.updateMatrix();
         this.foodMesh.setMatrixAt(i, dummy.matrix);
@@ -407,29 +407,32 @@ export class Environment {
     }
     this.foodMesh.instanceMatrix.needsUpdate = true;
 
-    // 3. Animate Procedural Kelp Swaying in Ocean Current
+    // 3. Animate Procedural Kelp Swaying in Ocean Current (Slow, hypnotic underwater surge)
     this.kelpStalks.forEach(stalk => {
       const swayTime = elapsed * stalk.swaySpeed + stalk.phase;
+      const numNodes = stalk.nodes.length;
       stalk.nodes.forEach((node, idx) => {
-        // Upper nodes sway more with traveling harmonic wave
-        const wave = Math.sin(swayTime - idx * 0.28) * stalk.amp;
-        node.rotation.z = wave;
-        node.rotation.x = Math.cos(swayTime * 0.7 - idx * 0.2) * (stalk.amp * 0.35);
+        // Nodes higher up bend gracefully with traveling tidal wave
+        const heightFactor = (idx + 1) / numNodes;
+        const waveZ = Math.sin(swayTime - idx * 0.14) * (stalk.amp * heightFactor);
+        const waveX = Math.cos(swayTime * 0.65 - idx * 0.1) * (stalk.amp * 0.25 * heightFactor);
+        node.rotation.z = waveZ;
+        node.rotation.x = waveX;
       });
     });
 
-    // 4. Animate Volumetric God Rays
+    // 4. Animate Volumetric God Rays (Slow, tranquil shafts of sunlight)
     this.godRays.forEach(ray => {
-      ray.mesh.position.x += Math.sin(elapsed * ray.speed + ray.phase) * dt * 0.8;
-      ray.mesh.material.opacity = 0.01 + Math.sin(elapsed * 1.5 + ray.phase) * 0.005;
+      ray.mesh.position.x += Math.sin(elapsed * ray.speed + ray.phase) * dt * 0.25;
+      ray.mesh.material.opacity = 0.01 + Math.sin(elapsed * 0.5 + ray.phase) * 0.004;
     });
 
-    // 5. Animate Marine Snow Particulates
+    // 5. Animate Marine Snow Particulates (Gentle, slow suspension)
     const positions = this.marineSnow.geometry.attributes.position.array;
     for (let i = 0; i < this.snowCount; i++) {
       const idx = i * 3;
-      positions[idx + 1] -= this.snowSpeeds[i] * dt * 2.0;
-      positions[idx + 0] += Math.sin(elapsed * 0.5 + i) * dt * 0.25;
+      positions[idx + 1] -= this.snowSpeeds[i] * dt * 0.5;
+      positions[idx + 0] += Math.sin(elapsed * 0.3 + i) * dt * 0.08;
 
       if (positions[idx + 1] < -b.y) {
         positions[idx + 1] = b.y;

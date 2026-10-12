@@ -355,7 +355,7 @@ export class Creature {
     }
 
     this.age += dt;
-    this.clock += dt * 4.0;
+    this.clock += dt * 2.2;
 
     // 1. Gather Sensory Inputs from Environment
     const sensoryInputs = this.gatherSensoryInputs(environment);
@@ -420,11 +420,11 @@ export class Creature {
     if (this.isSelected) {
       this.reticleMat.opacity = 0.85;
       this.reticleMat.color.setHex(0x00e5ff);
-      this.reticle.rotation.z += dt * 1.5;
+      this.reticle.rotation.z += dt * 0.75;
     } else if (this.isHovered) {
       this.reticleMat.opacity = 0.55;
       this.reticleMat.color.setHex(0x73d2ff);
-      this.reticle.rotation.z += dt * 3.0;
+      this.reticle.rotation.z += dt * 1.2;
     } else {
       this.reticleMat.opacity = 0.0;
     }
@@ -499,19 +499,21 @@ export class Creature {
   }
 
   animateAnatomy(thrustL, thrustR, tailBurst, dt) {
-    // Fins flap based on thrust
-    const finFlapFreq = 4.0 + this.speed * 1.5;
-    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.clock * finFlapFreq) * 0.3 * (0.5 + Math.abs(thrustL));
-    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.clock * finFlapFreq) * 0.3 * (0.5 + Math.abs(thrustR));
+    const speedRatio = this.speed / (this.maxSpeed || 10.0);
 
-    // Tail Spine undulation (serpentine wave propagation)
-    const waveFreq = 3.5 + tailBurst * 4.0 + this.speed * 0.8;
-    const waveAmp = 0.28 + tailBurst * 0.2;
+    // Fins flap based on thrust (gentle fluid cadence)
+    const finFlapFreq = 2.2 + speedRatio * 1.8;
+    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.clock * finFlapFreq) * 0.25 * (0.5 + Math.abs(thrustL));
+    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.clock * finFlapFreq) * 0.25 * (0.5 + Math.abs(thrustR));
+
+    // Tail Spine undulation (natural serpentine wave propagation)
+    const waveFreq = 2.0 + tailBurst * 2.2 + speedRatio * 1.5;
+    const waveAmp = 0.22 + tailBurst * 0.14;
 
     this.tailSegments.forEach((seg, idx) => {
-      const phase = this.clock * waveFreq - idx * 0.7;
+      const phase = this.clock * waveFreq - idx * 0.65;
       seg.rotation.y = Math.sin(phase) * waveAmp;
-      seg.rotation.x = Math.cos(phase * 0.5) * (waveAmp * 0.3);
+      seg.rotation.x = Math.cos(phase * 0.5) * (waveAmp * 0.25);
     });
   }
 
