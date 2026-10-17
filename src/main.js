@@ -9,6 +9,13 @@ import { Environment } from './environment.js';
 import { PopulationManager } from './evolution.js';
 import { UIManager } from './ui.js';
 
+// Scratch objects for camera tracking and raycasting
+const _camTargetPt = new THREE.Vector3();
+const _camTargetDelta = new THREE.Vector3();
+const _camOffset = new THREE.Vector3();
+const _dropPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const _dropIntersect = new THREE.Vector3();
+
 class SimulationApp {
   constructor() {
     this.container = document.getElementById('canvas-container');
@@ -122,14 +129,17 @@ class SimulationApp {
       this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
-      const roots = this.population.creatures.map(c => c.mesh);
-      const hits = this.raycaster.intersectObjects(roots, true);
+      const hitTargets = [];
+      const creatures = this.population.creatures;
+      for (let i = 0; i < creatures.length; i++) {
+        const c = creatures[i];
+        if (!c.isDead && c.headMesh) hitTargets.push(c.headMesh);
+      }
+      const hits = this.raycaster.intersectObjects(hitTargets, false);
 
       let currentHit = null;
       if (hits.length > 0) {
-        let obj = hits[0].object;
-        while (obj && !obj.userData.creature) obj = obj.parent;
-        if (obj && obj.userData.creature) currentHit = obj.userData.creature;
+        currentHit = hits[0].object.userData.creature || null;
       }
 
       if (this.hoveredCreature && this.hoveredCreature !== currentHit) {
@@ -148,10 +158,8 @@ class SimulationApp {
     this.renderer.domElement.addEventListener('pointerdown', (e) => {
       // Shift-Click drops food cluster at depth Z = 0 plane
       if (e.shiftKey) {
-        const dropPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-        const intersectPoint = new THREE.Vector3();
-        this.raycaster.ray.intersectPlane(dropPlane, intersectPoint);
-        this.environment.spawnFoodCluster(intersectPoint, 10);
+        this.raycaster.ray.intersectPlane(_dropPlane, _dropIntersect);
+        this.environment.spawnFoodCluster(_dropIntersect, 10);
         return;
       }
 
@@ -162,16 +170,6 @@ class SimulationApp {
         this.population.selectedCreature = this.hoveredCreature;
         this.hoveredCreature.isSelected = true;
         this.setCameraMode('track');
-
-        // Auto trigger bullet-time for observation
-        if (!this.ui.bulletTime) {
-          this.ui.bulletTime = true;
-          this.ui.simSpeed = 0.22;
-          const bBtn = document.getElementById('btn-bullet-time');
-          if (bBtn) bBtn.classList.add('active');
-          const speedBtns = document.querySelectorAll('.btn-speed');
-          speedBtns.forEach(b => b.classList.remove('active'));
-        }
       }
     });
 
@@ -238,24 +236,22 @@ class SimulationApp {
     if (selected && !selected.isDead && Number.isFinite(selected.position.x) && Number.isFinite(selected.position.y)) {
       if (this.cameraController.mode === 'macro') {
         // Macro studio: lock target to head and maintain close distance
-        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, selected.position.z || 0);
-        const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
-        const step = targetDelta.multiplyScalar(0.08);
-        this.controls.target.add(step);
-        this.camera.position.add(step);
+        _camTargetPt.set(selected.position.x, selected.position.y, selected.position.z || 0);
+        _camTargetDelta.subVectors(_camTargetPt, this.controls.target).multiplyScalar(0.08);
+        this.controls.target.add(_camTargetDelta);
+        this.camera.position.add(_camTargetDelta);
 
-        const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
-        if (offset.length() > 9.0) {
-          offset.setLength(9.0);
-          this.camera.position.copy(this.controls.target).add(offset);
+        _camOffset.subVectors(this.camera.position, this.controls.target);
+        if (_camOffset.length() > 9.0) {
+          _camOffset.setLength(9.0);
+          this.camera.position.copy(this.controls.target).add(_camOffset);
         }
       } else if (this.cameraController.mode === 'track') {
         // 'track' (Follow Fish): Translates camera smoothly in XY plane with ZERO spin
-        const targetPt = new THREE.Vector3(selected.position.x, selected.position.y, 0);
-        const targetDelta = new THREE.Vector3().subVectors(targetPt, this.controls.target);
-        const step = targetDelta.multiplyScalar(0.08);
-        this.controls.target.add(step);
-        this.camera.position.add(step);
+        _camTargetPt.set(selected.position.x, selected.position.y, 0);
+        _camTargetDelta.subVectors(_camTargetPt, this.controls.target).multiplyScalar(0.08);
+        this.controls.target.add(_camTargetDelta);
+        this.camera.position.add(_camTargetDelta);
       }
       // 'free' mode: camera does not translate toward fish, user pans around freely!
     }

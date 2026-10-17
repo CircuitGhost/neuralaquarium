@@ -61,7 +61,8 @@ export class Connectome {
     // Dynamic neuron activation states
     this.sensoryValues = new Float32Array(NUM_SENSORY);
     this.hiddenValues = new Float32Array(NUM_HIDDEN);
-    this.hiddenRaw = new Float32Array(NUM_HIDDEN);
+    this.prevHidden = new Float32Array(NUM_HIDDEN);
+    this.stimBoost = new Float32Array(NUM_SENSORY);
     this.motorValues = new Float32Array(NUM_MOTOR);
 
     // Active action potentials for visual rendering (pulses traveling along synapses)
@@ -153,10 +154,14 @@ export class Connectome {
    */
   step(sensoryInputs, dt) {
     for (let i = 0; i < NUM_SENSORY; i++) {
-      this.sensoryValues[i] = sensoryInputs[i] || 0.0;
+      if (this.stimBoost[i] > 0.001) {
+        this.stimBoost[i] = Math.max(0, this.stimBoost[i] - dt * 2.5);
+      }
+      this.sensoryValues[i] = (sensoryInputs[i] || 0.0) + this.stimBoost[i];
     }
 
-    const prevHidden = new Float32Array(this.hiddenValues);
+    this.prevHidden.set(this.hiddenValues);
+    const prevHidden = this.prevHidden;
 
     // 1. Compute Hidden (Interneurons) via Leaky-Integrator CTRNN
     for (let h = 0; h < NUM_HIDDEN; h++) {
@@ -253,6 +258,7 @@ export class Connectome {
 
   stimulate(type, idx, voltage = 1.8) {
     if (type === 'sensory') {
+      this.stimBoost[idx] = voltage;
       this.sensoryValues[idx] = voltage;
       // Trigger pulses along all outgoing paths
       for (let h = 0; h < NUM_HIDDEN; h++) {

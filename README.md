@@ -45,9 +45,9 @@ An artificial life simulation in WebGL/Three.js where bioluminescent aquatic org
 
 ### 🎥 5. Cinematic Cameras & Specimen Tracking
 * **3 Cinematic Perspectives**:
-  * **Free Tank Pan (Key `1`)**: 2D smooth panning and zooming across the entire aquarium environment.
-  * **Chase Cam (Key `2`)**: Spring-damped chase camera banked into organism swimming vectors.
-  * **Macro Studio (Key `3`)**: Close-up studio view locked onto the creature's firing connectome.
+  * **Follow Specimen (Key `1`)**: Spring-damped tracking locked onto selected swimming organism in the 2D plane.
+  * **Macro Studio (Key `2`)**: Close-up studio view locked onto the creature's firing connectome.
+  * **Free Tank Pan (Key `3` or Canvas Drag)**: Smooth 2D panning and zooming across the entire aquarium environment.
 * **Bullet-Time Mode (Key `B`)**: Eases simulation speed down to 0.22x slow motion for detailed neural and locomotion inspection.
 * **Leaderboard Quick-Jump**:
   * `Tab` / `Shift+Tab` or `[` / `]`: Cycle through living specimens.
@@ -65,12 +65,13 @@ An artificial life simulation in WebGL/Three.js where bioluminescent aquatic org
 | **Pan Tank** | Click & drag on canvas (left, right, up, down) |
 | **Zoom View** | Mouse scroll wheel / pinch gesture / `+` and `−` HUD buttons |
 | **Inspect Creature** | Click directly on any swimming creature |
-| **Drop Food** | `Shift` + Left Click anywhere in the tank |
-| **Camera Modes** | `1` Tank Pan · `2` Chase Cam · `3` Macro Studio |
+| **Drop Food** | `Shift` + Left Click anywhere in the tank or `F` key |
+| **Camera Modes** | `1` Follow Fish · `2` Macro Studio · `3` Free Pan |
 | **Cycle Organisms** | `Tab` / `Shift+Tab` or `[` / `]` |
 | **Bullet-Time (Slow Mo)** | `B` key |
 | **Neurosurgery / Voltage** | Click any neuron node on the HUD brain inspector |
 | **Synapse Rewiring** | Click any axon connection on the HUD |
+| **Audio Toggle** | `🔇 Audio Off` / `🔊 Audio On` button on HUD |
 
 ---
 

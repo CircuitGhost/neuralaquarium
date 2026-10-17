@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { Connectome, NUM_SENSORY, NUM_HIDDEN, NUM_MOTOR } from './neural.js';
+import { soundEngine } from './audio.js';
 
 let nextCreatureId = 1;
+
+// Reusable scratch objects to eliminate GC pressure in animation loop
+const _scratchVec3A = new THREE.Vector3();
+const _scratchVec3B = new THREE.Vector3();
+const _scratchVec3C = new THREE.Vector3();
+const _scratchQuat = new THREE.Quaternion();
 
 export class Creature {
   constructor(position, genome = null, generation = 1) {
@@ -21,6 +28,7 @@ export class Creature {
     this.isHovered = false;
     this.isSelected = false;
     this.highlightedNeuron = null;
+    this.sensoryInputs = new Float32Array(NUM_SENSORY);
 
     // Kinematics & Spatial Orientation
     this.position = position ? position.clone() : new THREE.Vector3();
@@ -72,6 +80,7 @@ export class Creature {
 
     this.headMesh = new THREE.Mesh(headGeo, this.headMat);
     this.headMesh.position.set(0, 0, 0.2);
+    this.headMesh.userData = { creature: this };
     this.mesh.add(this.headMesh);
 
     // 2. Sensory Antennae (Left & Right) with receptor tips
@@ -378,18 +387,18 @@ export class Creature {
 
     // Heading vector predominantly in XY plane with subtle organic Z depth drift
     const zDrift = Math.sin(this.clock * 0.7) * 0.2;
-    const targetHeading = new THREE.Vector3(
+    _scratchVec3A.set(
       Math.cos(this.headingAngle),
       Math.sin(this.headingAngle) + pitchRate * 0.45,
       zDrift
     ).normalize();
 
-    this.heading.lerp(targetHeading, dt * 5.5).normalize();
+    this.heading.lerp(_scratchVec3A, dt * 5.5).normalize();
 
     if (this.heading.lengthSq() > 0.0001) {
       this.heading.normalize();
-      const lookTarget = this.position.clone().add(this.heading);
-      this.mesh.lookAt(lookTarget);
+      _scratchVec3B.copy(this.position).add(this.heading);
+      this.mesh.lookAt(_scratchVec3B);
       this.quaternion.copy(this.mesh.quaternion);
     }
 
@@ -397,18 +406,32 @@ export class Creature {
     const targetSpeed = forwardThrust * (this.maxSpeed || 10.0);
     this.speed = THREE.MathUtils.lerp(this.speed, targetSpeed, dt * 3.8);
     if (!Number.isFinite(this.speed)) this.speed = 0.0;
-    this.velocity.copy(this.heading).multiplyScalar(this.speed);
 
-    // 2.5D Tank Boundary Repulsion & Z-Depth Centering
+    // 2.5D Tank Boundary Repulsion & Active Heading Steering
     const bounds = environment.bounds;
-    const boundaryPush = new THREE.Vector3();
-    if (Math.abs(this.position.x) > bounds.x - 3) boundaryPush.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - (bounds.x - 3)) * 6.0;
-    if (Math.abs(this.position.y) > bounds.y - 3) boundaryPush.y = -Math.sign(this.position.y) * (Math.abs(this.position.y) - (bounds.y - 3)) * 6.0;
+    _scratchVec3C.set(0, 0, 0);
+    if (Math.abs(this.position.x) > bounds.x - 3.5) {
+      _scratchVec3C.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - (bounds.x - 3.5)) * 8.0;
+    }
+    if (Math.abs(this.position.y) > bounds.y - 3.5) {
+      _scratchVec3C.y = -Math.sign(this.position.y) * (Math.abs(this.position.y) - (bounds.y - 3.5)) * 8.0;
+    }
     // Stronger Z containment so they stay within the cross-section
-    if (Math.abs(this.position.z) > bounds.z - 1.5) boundaryPush.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - (bounds.z - 1.5)) * 12.0;
+    if (Math.abs(this.position.z) > bounds.z - 1.5) {
+      _scratchVec3C.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - (bounds.z - 1.5)) * 12.0;
+    }
     // Continuous gentle spring toward Z = 0
-    boundaryPush.z -= this.position.z * 1.8;
-    this.velocity.addScaledVector(boundaryPush, dt);
+    _scratchVec3C.z -= this.position.z * 2.0;
+
+    // Smoothly turn headingAngle away from walls so creatures don't get trapped against tank boundaries
+    if (Math.abs(_scratchVec3C.x) > 0.1 || Math.abs(_scratchVec3C.y) > 0.1) {
+      const awayAngle = Math.atan2(_scratchVec3C.y, _scratchVec3C.x);
+      const diff = Math.atan2(Math.sin(awayAngle - this.headingAngle), Math.cos(awayAngle - this.headingAngle));
+      this.headingAngle += diff * Math.min(1.0, dt * 4.5);
+    }
+
+    this.velocity.copy(this.heading).multiplyScalar(this.speed);
+    this.velocity.addScaledVector(_scratchVec3C, dt);
 
     this.position.addScaledVector(this.velocity, dt);
     if (!Number.isFinite(this.position.x) || !Number.isFinite(this.position.y)) {
@@ -449,19 +472,20 @@ export class Creature {
   }
 
   gatherSensoryInputs(environment) {
-    const inputs = new Float32Array(NUM_SENSORY);
+    const inputs = this.sensoryInputs;
+    inputs.fill(0);
 
     // Find nearest food
     const nearest = environment.getNearestFood(this.position);
 
     if (nearest) {
-      const toFood = nearest.position.clone().sub(this.position);
-      const dist = toFood.length();
-      toFood.normalize();
+      _scratchVec3A.copy(nearest.position).sub(this.position);
+      const dist = _scratchVec3A.length();
+      if (dist > 0.0001) _scratchVec3A.divideScalar(dist);
 
       // Transform food vector to local creature coordinates
-      const invQuat = this.quaternion.clone().invert();
-      const localFoodDir = toFood.applyQuaternion(invQuat);
+      _scratchQuat.copy(this.quaternion).invert();
+      const localFoodDir = _scratchVec3A.applyQuaternion(_scratchQuat);
 
       // S0: Food Left (positive when food is to the left: -x)
       inputs[0] = Math.max(0, -localFoodDir.x) * Math.max(0, localFoodDir.z);
@@ -591,6 +615,9 @@ export class Creature {
 
       // Glow pulse body on feeding
       this.headMat.emissiveIntensity = 0.55;
+      if (this.isSelected) {
+        soundEngine.playFeed();
+      }
     } else {
       this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, 0.08);
     }
@@ -649,9 +676,17 @@ export class Creature {
 
   dispose() {
     this.mesh.traverse(child => {
-      if (child.isMesh) {
-        child.geometry.dispose();
-        if (child.material.isMaterial) child.material.dispose();
+      if (child.isMesh || child.isLine || child.isLineSegments || child.isPoints) {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m && m.dispose && m.dispose());
+          } else if (child.material.dispose) {
+            child.material.dispose();
+          }
+        }
       }
     });
   }

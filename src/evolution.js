@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Creature } from './creature.js';
+import { Connectome } from './neural.js';
 
 export class PopulationManager {
   constructor(scene, environment, targetSize = 20) {
@@ -45,6 +46,7 @@ export class PopulationManager {
 
     if (!this.selectedCreature) {
       this.selectedCreature = c;
+      c.isSelected = true;
     }
 
     return c;
@@ -75,34 +77,37 @@ export class PopulationManager {
 
       // Handle death & removal
       if (c.isDead && c.fadeAlpha <= 0.02) {
-        if (this.selectedCreature === c) {
-          // Fallback to highest energy creature
-          this.selectedCreature = this.getHealthiestCreature();
-        }
+        const wasSelected = (this.selectedCreature === c);
         this.scene.remove(c.mesh);
         c.dispose();
         this.creatures.splice(i, 1);
         this.totalDeaths++;
+
+        if (wasSelected) {
+          this.selectedCreature = this.getHealthiestCreature();
+          if (this.selectedCreature) {
+            this.selectedCreature.isSelected = true;
+          }
+        }
       }
     }
 
-    // 2. Prevent extinction / maintain population density
+    // 2. Prevent extinction / maintain population density with mutated genetic diversity
     if (this.creatures.length < 8) {
-      // Spawn new offspring from best surviving genome or fresh genetic line
-      const seedGenome = this.bestGenome ? this.bestGenome : null;
+      let seedGenome = null;
+      if (this.bestGenome) {
+        // Diversify by mutating champion genome to prevent clonal monoculture
+        const dummy = new Connectome(this.bestGenome);
+        seedGenome = Math.random() < 0.65 ? dummy.cloneAndMutate(0.25, 0.35).genome : null;
+      }
       this.spawnCreature(seedGenome, this.highestGeneration);
     }
   }
 
   getHealthiestCreature() {
-    if (this.creatures.length === 0) return null;
-    let healthiest = this.creatures[0];
-    for (const c of this.creatures) {
-      if (c.energy > healthiest.energy && !c.isDead) {
-        healthiest = c;
-      }
-    }
-    return healthiest;
+    const living = this.creatures.filter(c => !c.isDead);
+    if (living.length === 0) return null;
+    return living.reduce((best, c) => c.energy > best.energy ? c : best, living[0]);
   }
 
   selectCreatureById(id) {

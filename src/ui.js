@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SENSORY_LABELS, HIDDEN_LABELS, MOTOR_LABELS, NUM_SENSORY, NUM_HIDDEN, NUM_MOTOR } from './neural.js';
+import { soundEngine } from './audio.js';
 
 export class UIManager {
   constructor(populationManager, environment, cameraController) {
@@ -177,6 +178,16 @@ export class UIManager {
         this.pop.resetAll();
       });
     }
+
+    // 10. Web Audio API Ambient & Sfx Toggle
+    const btnAudio = document.getElementById('btn-audio');
+    if (btnAudio) {
+      btnAudio.addEventListener('click', () => {
+        const isMuted = soundEngine.toggleMute();
+        btnAudio.innerText = isMuted ? '🔇 Audio Off' : '🔊 Audio On';
+        btnAudio.classList.toggle('active', !isMuted);
+      });
+    }
   }
 
   bindBrainCanvasEvents() {
@@ -220,7 +231,12 @@ export class UIManager {
       // Check Synapses
       let hitSyn = null;
       for (const syn of this.cachedSynapses) {
-        const dist = distToSegment(pos, syn.p1, syn.p2);
+        let dist;
+        if (syn.ctrl) {
+          dist = Math.min(distToSegment(pos, syn.p1, syn.ctrl), distToSegment(pos, syn.ctrl, syn.p2));
+        } else {
+          dist = distToSegment(pos, syn.p1, syn.p2);
+        }
         if (dist < 4.5) {
           hitSyn = syn;
           break;
@@ -254,6 +270,7 @@ export class UIManager {
       if (this.hoveredNeuron) {
         // Stimulate Neuron!
         c.stimulateNeuron(this.hoveredNeuron.type, this.hoveredNeuron.idx);
+        soundEngine.playStimulate();
         this.stimulationRipples.push({
           x: this.hoveredNeuron.x,
           y: this.hoveredNeuron.y,
@@ -265,9 +282,10 @@ export class UIManager {
         const syn = this.hoveredSynapse;
         c.connectome.toggleSynapsePolarity(syn.fromType, syn.fromIdx, syn.toType, syn.toIdx);
         c.rebuildSynapticLines();
+        soundEngine.playStimulate();
         this.stimulationRipples.push({
-          x: (syn.p1.x + syn.p2.x) * 0.5,
-          y: (syn.p1.y + syn.p2.y) * 0.5,
+          x: syn.ctrl ? syn.ctrl.x : (syn.p1.x + syn.p2.x) * 0.5,
+          y: syn.ctrl ? syn.ctrl.y : (syn.p1.y + syn.p2.y) * 0.5,
           radius: 8,
           alpha: 1.0
         });
@@ -343,37 +361,65 @@ export class UIManager {
     // 1. Draw Synaptic Connections
     ctx.lineWidth = 1.0;
 
-    const recordAndDrawSynapse = (p1, p2, weight, fromType, fromIdx, toType, toIdx) => {
-      if (Math.abs(weight) > 0.22) {
+    const recordAndDrawSynapse = (p1, p2, weight, fromType, fromIdx, toType, toIdx, isDirect = false, curveOffset = 0) => {
+      const threshold = isDirect ? 0.35 : 0.22;
+      if (Math.abs(weight) > threshold) {
         const isHovered = this.hoveredSynapse &&
           this.hoveredSynapse.fromType === fromType && this.hoveredSynapse.fromIdx === fromIdx &&
           this.hoveredSynapse.toType === toType && this.hoveredSynapse.toIdx === toIdx;
 
-        this.cachedSynapses.push({ p1, p2, weight, fromType, fromIdx, toType, toIdx });
+        let ctrl = null;
+        if (curveOffset !== 0) {
+          ctrl = { x: (p1.x + p2.x) * 0.5 + curveOffset, y: (p1.y + p2.y) * 0.5 };
+        }
+
+        this.cachedSynapses.push({ p1, p2, ctrl, weight, fromType, fromIdx, toType, toIdx });
 
         if (isHovered) {
           ctx.lineWidth = 3.0;
           ctx.strokeStyle = '#ffffff';
         } else {
           ctx.lineWidth = 1.0 + Math.min(2.0, Math.abs(weight));
-          ctx.strokeStyle = weight > 0 ? `rgba(0, 229, 255, ${Math.min(0.7, Math.abs(weight) * 0.5)})` : `rgba(255, 51, 102, ${Math.min(0.7, Math.abs(weight) * 0.5)})`;
+          const alpha = isDirect ? Math.min(0.35, Math.abs(weight) * 0.3) : Math.min(0.7, Math.abs(weight) * 0.5);
+          ctx.strokeStyle = weight > 0 ? `rgba(0, 229, 255, ${alpha})` : `rgba(255, 51, 102, ${alpha})`;
         }
 
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
+        if (ctrl) {
+          ctx.quadraticCurveTo(ctrl.x, ctrl.y, p2.x, p2.y);
+        } else {
+          ctx.lineTo(p2.x, p2.y);
+        }
         ctx.stroke();
       }
     };
 
-    // Sensory to Hidden
+    // Direct Reflexes (Sensory to Motor - Braitenberg Architecture)
+    for (let mi = 0; mi < NUM_MOTOR; mi++) {
+      for (let si = 0; si < NUM_SENSORY; si++) {
+        recordAndDrawSynapse(sensoryNodes[si], motorNodes[mi], g.wDirect[mi][si], 'sensory', si, 'motor', mi, true);
+      }
+    }
+
+    // Sensory to Hidden Interneurons
     for (let hi = 0; hi < NUM_HIDDEN; hi++) {
       for (let si = 0; si < NUM_SENSORY; si++) {
         recordAndDrawSynapse(sensoryNodes[si], hiddenNodes[hi], g.wSensoryHidden[hi][si], 'sensory', si, 'hidden', hi);
       }
     }
 
-    // Hidden to Motor
+    // Recurrent Hidden Feedback Loops (CTRNN Interneurons)
+    for (let h1 = 0; h1 < NUM_HIDDEN; h1++) {
+      for (let h2 = 0; h2 < NUM_HIDDEN; h2++) {
+        if (h1 !== h2) {
+          const curveOffset = ((h1 + h2) % 2 === 0) ? -22 : 22;
+          recordAndDrawSynapse(hiddenNodes[h1], hiddenNodes[h2], g.wRecurrent[h2][h1], 'hidden', h1, 'hidden', h2, false, curveOffset);
+        }
+      }
+    }
+
+    // Hidden to Motor Outputs
     for (let mi = 0; mi < NUM_MOTOR; mi++) {
       for (let hi = 0; hi < NUM_HIDDEN; hi++) {
         recordAndDrawSynapse(hiddenNodes[hi], motorNodes[mi], g.wHiddenMotor[mi][hi], 'hidden', hi, 'motor', mi);
@@ -390,8 +436,19 @@ export class UIManager {
       else if (p.toType === 'motor') to = motorNodes[p.toIdx];
 
       if (from && to) {
-        const px = from.x + (to.x - from.x) * p.progress;
-        const py = from.y + (to.y - from.y) * p.progress;
+        let px, py;
+        if (p.fromType === 'hidden' && p.toType === 'hidden' && p.fromIdx !== p.toIdx) {
+          const curveOffset = ((p.fromIdx + p.toIdx) % 2 === 0) ? -22 : 22;
+          const cx = (from.x + to.x) * 0.5 + curveOffset;
+          const cy = (from.y + to.y) * 0.5;
+          const t = p.progress;
+          const invT = 1.0 - t;
+          px = invT * invT * from.x + 2 * invT * t * cx + t * t * to.x;
+          py = invT * invT * from.y + 2 * invT * t * cy + t * t * to.y;
+        } else {
+          px = from.x + (to.x - from.x) * p.progress;
+          py = from.y + (to.y - from.y) * p.progress;
+        }
 
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
