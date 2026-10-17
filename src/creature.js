@@ -525,40 +525,41 @@ export class Creature {
   }
 
   animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate = 0) {
-    const speedRatio = this.speed / (this.maxSpeed || 10.0);
+    const speedRatio = THREE.MathUtils.clamp(this.speed / (this.maxSpeed || 10.0), 0.1, 1.5);
 
     // Continuous wave phase accumulation - eliminates frequency-shift phase jumping & jitter!
-    const finFlapFreq = 2.2 + speedRatio * 2.4;
+    const finFlapFreq = 3.6 + speedRatio * 3.2;
     this.finPhase += dt * finFlapFreq;
 
-    const waveFreq = 2.4 + tailBurst * 3.0 + speedRatio * 1.6;
+    // Energetic swimming frequency (3.8 Hz idle -> 9.5 Hz burst)
+    const waveFreq = 3.8 + tailBurst * 4.5 + speedRatio * 2.8;
     this.tailPhase += dt * waveFreq;
 
     // Dynamic banking roll into turns (fluid aquatic hydrodynamics)
-    const targetRoll = THREE.MathUtils.clamp(-steerRate * 0.16, -0.45, 0.45);
-    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, dt * 5.0);
+    const targetRoll = THREE.MathUtils.clamp(-steerRate * 0.22, -0.55, 0.55);
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, dt * 5.5);
     this.mesh.rotation.z = this.roll;
 
-    // Pectoral fins flap smoothly with differential thrust and 3D fluttering
-    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.finPhase) * 0.28 * (0.6 + Math.abs(thrustL));
-    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.finPhase) * 0.28 * (0.6 + Math.abs(thrustR));
-    this.finL.rotation.x = Math.cos(this.finPhase) * 0.16 * (0.5 + Math.abs(thrustL));
-    this.finR.rotation.x = Math.cos(this.finPhase) * 0.16 * (0.5 + Math.abs(thrustR));
+    // Pectoral fins flap vigorously with differential thrust and 3D fluttering
+    const finAmpL = 0.38 * (0.7 + Math.abs(thrustL) * 0.5);
+    const finAmpR = 0.38 * (0.7 + Math.abs(thrustR) * 0.5);
+    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.finPhase) * finAmpL;
+    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.finPhase) * finAmpR;
+    this.finL.rotation.x = Math.cos(this.finPhase) * 0.22;
+    this.finR.rotation.x = Math.cos(this.finPhase) * 0.22;
 
-    // Tail Spine undulation down parent-child hierarchy.
-    // Curvature is distributed progressively down the spine so each joint bends smoothly
-    // without compounding into extreme folding angles or visual clipping.
+    // Tail Spine undulation down parent-child hierarchy
+    // Natural biological fish kinematics: amplitude increases progressively toward the caudal fin
     const numSegs = this.tailSegments.length;
     this.tailSegments.forEach((seg, idx) => {
-      const segPhase = this.tailPhase - idx * 0.52;
-      const jointCurvature = (0.065 + (idx / numSegs) * 0.085) * (0.8 + tailBurst * 0.45);
+      const segPhase = this.tailPhase - idx * 0.58;
+      // Progressive joint amplitude: ~12° at base to ~30° at caudal fluke
+      const jointAmp = (0.20 + (idx / numSegs) * 0.32) * (1.0 + tailBurst * 0.7);
 
-      // Primary undulation in horizontal plane
-      seg.rotation.y = Math.sin(segPhase) * jointCurvature;
-      // Secondary vertical wave for organic fluid 3D swimming
-      seg.rotation.x = Math.cos(segPhase * 0.5) * (jointCurvature * 0.22);
-      // Subtle axial twist
-      seg.rotation.z = Math.sin(segPhase * 0.5) * (jointCurvature * 0.1);
+      // Flex across both lateral (Y) and vertical/pitch (X) axes for rich 3D visibility from all camera angles
+      seg.rotation.y = Math.sin(segPhase) * jointAmp;
+      seg.rotation.x = Math.cos(segPhase * 0.5) * (jointAmp * 0.45);
+      seg.rotation.z = Math.sin(segPhase * 0.5) * (jointAmp * 0.18);
     });
   }
 
