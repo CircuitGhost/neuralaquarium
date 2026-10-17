@@ -30,6 +30,14 @@ export class Creature {
     this.highlightedNeuron = null;
     this.sensoryInputs = new Float32Array(NUM_SENSORY);
 
+    // Life Stage & Senescence
+    this.lifeStage = 'fry'; // 'fry' (0-12s), 'adult' (12-90s), 'elder' (90s+)
+    this.currentScaleFactor = 0.6;
+    this.maxLifespan = 135.0 + ((traits && traits.longevity) ? traits.longevity : Math.random()) * 30.0;
+    this.isDissolving = false;
+    this.dissolveProgress = 0.0;
+    this.sporeTimer = 0.0;
+
     // Kinematics & Spatial Orientation
     this.position = position ? position.clone() : new THREE.Vector3();
     this.velocity = new THREE.Vector3();
@@ -406,13 +414,118 @@ export class Creature {
    */
   update(dt, environment) {
     if (this.isDead) {
-      this.fadeAlpha = Math.max(0, this.fadeAlpha - dt * 1.5);
-      this.mesh.scale.multiplyScalar(0.97);
+      if (this.isDissolving) {
+        // Senescent Elder Dissolution: sinking to sandy bed and dissolving into sparkling nutrient spores
+        this.dissolveProgress = Math.min(1.0, this.dissolveProgress + dt * 0.22);
+        this.fadeAlpha = Math.max(0, 1.0 - this.dissolveProgress);
+
+        // Gentle descent toward sandy dune floor
+        const b = environment ? environment.bounds : null;
+        if (b) {
+          const dune = Math.sin(this.position.x * 0.12) * 0.8 + Math.cos(this.position.z * 0.3) * 0.4;
+          const targetFloorY = -b.y + 0.6 + dune;
+          if (this.position.y > targetFloorY) {
+            this.position.y -= dt * 1.35;
+          }
+          // Drift slightly with convection currents as it sinks
+          if (environment.getConvectionCurrent) {
+            const current = environment.getConvectionCurrent(this.position);
+            this.position.addScaledVector(current, dt * 0.3);
+          }
+          this.mesh.position.copy(this.position);
+        }
+
+        // Slow graceful settling tilt
+        this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0.45, dt * 1.5);
+        this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0.25, dt * 1.5);
+
+        // Scale shrinks gently as organic matter dissolves into the substrate
+        const currentScale = (1.15) * (1.0 - this.dissolveProgress * 0.55);
+        this.mesh.scale.set(currentScale, currentScale, currentScale);
+
+        // Emit sparkling bioluminescent nutrient spores during dissolution
+        this.sporeTimer = (this.sporeTimer || 0) + dt;
+        if (environment && environment.emitWake && this.sporeTimer >= 0.08) {
+          this.sporeTimer = 0;
+          _scratchVec3A.copy(this.position);
+          _scratchVec3A.x += (Math.random() - 0.5) * 1.4;
+          _scratchVec3A.y += (Math.random() - 0.5) * 0.8;
+          _scratchVec3A.z += (Math.random() - 0.5) * 1.0;
+          _scratchVec3B.set((Math.random() - 0.5) * 0.4, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * 0.4);
+          environment.emitWake(_scratchVec3A, _scratchVec3B, this.emissiveColor, 1.2);
+        }
+
+        // Substrate flora enrichment trigger once settled
+        if (environment && environment.enrichFloraNear && this.dissolveProgress > 0.45 && !this._hasEnrichedFlora) {
+          this._hasEnrichedFlora = true;
+          environment.enrichFloraNear(this.position, 12.0);
+        }
+      } else {
+        // Starvation death: quicker fade and contraction
+        this.fadeAlpha = Math.max(0, this.fadeAlpha - dt * 1.5);
+        this.mesh.scale.multiplyScalar(0.97);
+      }
       return;
     }
 
     this.age += dt;
     this.clock += dt * 2.2;
+
+    // Determine Natural Life Stage
+    // Fry: 0 - 12s | Adult: 12 - 90s | Elder: 90s+
+    let targetScale = 1.0;
+    let metabolicScaleMultiplier = 1.0;
+    const traits = this.connectome.genome.traits;
+
+    if (this.age < 12.0) {
+      this.lifeStage = 'fry';
+      // Smooth growth from 60% fry scale to 100% adult scale
+      const growthRatio = Math.min(1.0, this.age / 12.0);
+      targetScale = 0.6 + growthRatio * 0.4;
+      metabolicScaleMultiplier = 1.2; // Energetic higher metabolic burn (+20%)
+
+      // Translucent hue for delicate fry body pod
+      if (this.headMat) {
+        this.headMat.opacity = 0.55 + growthRatio * 0.3;
+        this.headMat.transmission = 0.45 - growthRatio * 0.25;
+        this.headMat.emissiveIntensity = 0.12 + growthRatio * 0.06;
+      }
+    } else if (this.age < 90.0) {
+      this.lifeStage = 'adult';
+      targetScale = 1.0;
+      metabolicScaleMultiplier = 1.0;
+
+      // Vibrant saturated bioluminescent markings
+      if (this.headMat) {
+        this.headMat.opacity = 0.85;
+        this.headMat.transmission = 0.2;
+        this.headMat.emissiveIntensity = 0.18;
+      }
+    } else {
+      this.lifeStage = 'elder';
+      // Elders grow slightly larger and stately: scale up smoothly to 115%
+      const elderProgress = Math.min(1.0, (this.age - 90.0) / 25.0);
+      targetScale = 1.0 + elderProgress * 0.15;
+      metabolicScaleMultiplier = 0.85; // Slower basal metabolic rate
+
+      // Deeper, weathered, mature luminescence
+      if (this.headMat) {
+        this.headMat.opacity = 0.92;
+        this.headMat.transmission = 0.1;
+        this.headMat.emissiveIntensity = 0.26;
+      }
+
+      // Check Natural Lifespan Conclusion (Senescence)
+      if (this.age >= this.maxLifespan) {
+        this.isDead = true;
+        this.isDissolving = true;
+        this.dissolveProgress = 0.0;
+        return;
+      }
+    }
+
+    this.currentScaleFactor = THREE.MathUtils.lerp(this.currentScaleFactor, targetScale, dt * 2.0);
+    this.mesh.scale.set(this.currentScaleFactor, this.currentScaleFactor, this.currentScaleFactor);
 
     // 1. Gather Sensory Inputs from Environment
     const sensoryInputs = this.gatherSensoryInputs(environment);
@@ -500,7 +613,7 @@ export class Creature {
       this.reticleMat.opacity = 0.0;
     }
 
-    // 4. Animate Undulating Anatomy with hydrodynamic banking
+    // 4. Animate Undulating Anatomy with hydrodynamic banking and stage cadence
     this.animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate);
 
     // 4b. Hydrodynamic Cavitation Micro-Wake Particles
@@ -512,13 +625,14 @@ export class Creature {
     // 6. Food Consumption Check at Mouth Tip with Suction
     this.checkFoodConsumption(environment, dt);
 
-    // 7. Metabolic Energy Cost
-    const metabolicCost = (0.8 + Math.pow(this.speed / this.maxSpeed, 2) * 2.2) * this.connectome.genome.traits.metabolism * dt;
-    this.energy -= metabolicCost;
+    // 7. Metabolic Energy Cost (modulated by life stage)
+    const baseMetabolic = (0.8 + Math.pow(this.speed / this.maxSpeed, 2) * 2.2) * (traits.metabolism || 1.0) * metabolicScaleMultiplier;
+    this.energy -= baseMetabolic * dt;
     this.fitness += this.speed * dt * 0.1;
 
     if (this.energy <= 0) {
       this.isDead = true;
+      this.isDissolving = false;
     }
   }
 
@@ -576,12 +690,23 @@ export class Creature {
   animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate = 0) {
     const speedRatio = THREE.MathUtils.clamp(this.speed / (this.maxSpeed || 10.0), 0.1, 1.5);
 
+    // Life stage cadence modulation: fry have rapid energetic flutter, elders have stately swimming cadence
+    let cadenceMultiplier = 1.0;
+    let finFlutterMultiplier = 1.0;
+    if (this.lifeStage === 'fry') {
+      cadenceMultiplier = 1.25;
+      finFlutterMultiplier = 1.45;
+    } else if (this.lifeStage === 'elder') {
+      cadenceMultiplier = 0.78;
+      finFlutterMultiplier = 0.75;
+    }
+
     // Continuous wave phase accumulation - eliminates frequency-shift phase jumping & jitter!
-    const finFlapFreq = 3.6 + speedRatio * 3.2;
+    const finFlapFreq = (3.6 + speedRatio * 3.2) * finFlutterMultiplier;
     this.finPhase += dt * finFlapFreq;
 
-    // Energetic swimming frequency (3.8 Hz idle -> 9.5 Hz burst)
-    const waveFreq = 3.8 + tailBurst * 4.5 + speedRatio * 2.8;
+    // Swimming frequency (fry energetic burst, elder stately glide)
+    const waveFreq = (3.8 + tailBurst * 4.5 + speedRatio * 2.8) * cadenceMultiplier;
     this.tailPhase += dt * waveFreq;
 
     // Dynamic banking roll into turns (fluid aquatic hydrodynamics)
@@ -775,7 +900,7 @@ export class Creature {
   }
 
   canReproduce() {
-    return this.energy > 185.0 && this.age > 12.0 && this.foodEaten >= 3;
+    return this.lifeStage === 'adult' && this.energy > 185.0 && this.age >= 12.0 && this.foodEaten >= 3 && !this.isDead;
   }
 
   reproduce() {

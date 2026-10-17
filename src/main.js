@@ -205,6 +205,15 @@ class SimulationApp {
         this.cameraController.zoom(10);
       } else if (e.key === 'c' || e.key === 'C') {
         this.population.cloneSelected(3);
+      } else if (e.key === 'l' || e.key === 'L') {
+        const modal = document.getElementById('lineage-modal');
+        if (modal) {
+          const isOpen = modal.style.display === 'flex';
+          modal.style.display = isOpen ? 'none' : 'flex';
+          if (!isOpen && this.ui.renderLineageBank) {
+            this.ui.renderLineageBank();
+          }
+        }
       } else if (e.code === 'Space') {
         e.preventDefault();
         this.ui.togglePause();

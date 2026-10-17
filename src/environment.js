@@ -442,6 +442,79 @@ export class Environment {
     return this.attractAndConsumeFood(pos, radius * 1.5, radius, 0.016);
   }
 
+  /**
+   * Calculates the gentle dual-cell ocean convection gyres at a 3D position.
+   * Convection cells are centered around the left and right kelp groves (x = -24 and x = +24).
+   * Left gyre circulates counter-clockwise; Right gyre circulates clockwise.
+   * Central region (x ~ 0) exhibits natural upwelling, perimeter downwelling.
+   */
+  getConvectionCurrent(pos, elapsed = 0) {
+    const current = new THREE.Vector3(0, 0, 0);
+    const b = this.bounds;
+
+    // Primary Dual Gyres
+    // Gyre 1 (Left Grove): Center (-24, 0)
+    const dx1 = pos.x - (-24.0);
+    const dy1 = pos.y - 0.0;
+    const r1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) + 1.0;
+    const strength1 = Math.exp(-r1 / 22.0) * 1.8;
+    // Tangential circulation (counter-clockwise)
+    current.x += (-dy1 / r1) * strength1;
+    current.y += (dx1 / r1) * strength1;
+
+    // Gyre 2 (Right Grove): Center (+24, 0)
+    const dx2 = pos.x - 24.0;
+    const dy2 = pos.y - 0.0;
+    const r2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) + 1.0;
+    const strength2 = Math.exp(-r2 / 22.0) * 1.8;
+    // Tangential circulation (clockwise)
+    current.x += (dy2 / r2) * strength2;
+    current.y += (-dx2 / r2) * strength2;
+
+    // Central Upwelling Thermal Column
+    const centerDist = Math.abs(pos.x);
+    if (centerDist < 16.0) {
+      const upwelling = (1.0 - centerDist / 16.0) * 0.75;
+      current.y += upwelling;
+    }
+
+    // Gentle micro-turbulent oscillation
+    if (elapsed > 0) {
+      current.x += Math.sin(pos.y * 0.15 + elapsed * 0.4) * 0.25;
+      current.y += Math.cos(pos.x * 0.12 + elapsed * 0.35) * 0.20;
+      current.z += Math.sin(pos.x * 0.1 + pos.y * 0.1 + elapsed * 0.3) * 0.12;
+    }
+
+    // Boundary damping so current does not push objects through the tank glass
+    const margin = 3.0;
+    if (pos.x > b.x - margin && current.x > 0) current.x *= Math.max(0, (b.x - pos.x) / margin);
+    if (pos.x < -b.x + margin && current.x < 0) current.x *= Math.max(0, (pos.x + b.x) / margin);
+    if (pos.y > b.y - margin && current.y > 0) current.y *= Math.max(0, (b.y - pos.y) / margin);
+    if (pos.y < -b.y + margin && current.y < 0) current.y *= Math.max(0, (pos.y + b.y) / margin);
+
+    return current;
+  }
+
+  /**
+   * Stimulates and enriches substrate anemones and kelp flora in the vicinity
+   * of a senescent elder's dissolution site, boosting their bioluminescent expansion.
+   */
+  enrichFloraNear(pos, radius = 14.0) {
+    const radSq = radius * radius;
+    if (this.anemones) {
+      this.anemones.forEach(a => {
+        const dSq = a.pos.distanceToSquared(pos);
+        if (dSq < radSq) {
+          // Temporarily blossom and flourish
+          a.targetExpansion = 1.35;
+          if (a.crown) {
+            a.crown.scale.set(1.35, 1.35, 1.35);
+          }
+        }
+      });
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Graphics Improvement 1: Animated Sunlight Floor Caustics
   // --------------------------------------------------------------------------
@@ -938,16 +1011,23 @@ export class Environment {
       if (i < this.foodItems.length) {
         const f = this.foodItems[i];
         if (!f.absorbing) {
-          f.position.x += Math.sin(elapsed * 0.3 + f.phase) * dt * 0.25;
-          f.position.y += Math.cos(elapsed * 0.25 + f.phase * 1.2) * dt * 0.18;
-          f.position.z += Math.sin(elapsed * 0.2 + f.phase) * dt * 0.1;
+          // Ocean Convection Gyres & Plankton Drift
+          const gyreCurrent = this.getConvectionCurrent(f.position, elapsed);
+          f.position.x += gyreCurrent.x * dt * 0.95;
+          f.position.y += gyreCurrent.y * dt * 0.95;
+          f.position.z += gyreCurrent.z * dt * 0.95;
 
-          if (f.position.x > b.x - 2) f.position.x = -b.x + 2;
-          if (f.position.x < -b.x + 2) f.position.x = b.x - 2;
-          if (f.position.y > b.y - 2) f.position.y = -b.y + 2;
-          if (f.position.y < -b.y + 2) f.position.y = b.y - 2;
-          if (f.position.z > b.z - 1) f.position.z = -b.z + 1;
-          if (f.position.z < -b.z + 1) f.position.z = b.z - 1;
+          // Gentle ambient buoyancy & micro-eddy oscillation
+          f.position.y += Math.sin(elapsed * 0.8 + f.phase) * dt * 0.15;
+          f.position.z += Math.cos(elapsed * 0.6 + f.phase) * dt * 0.08;
+
+          // Boundary wrapping with generous margins for smooth loopflow
+          if (f.position.x > b.x - 2.5) f.position.x = -b.x + 2.5;
+          if (f.position.x < -b.x + 2.5) f.position.x = b.x - 2.5;
+          if (f.position.y > b.y - 2.5) f.position.y = -b.y + 2.5;
+          if (f.position.y < -b.y + 2.5) f.position.y = b.y - 2.5;
+          if (f.position.z > b.z - 1.2) f.position.z = -b.z + 1.2;
+          if (f.position.z < -b.z + 1.2) f.position.z = b.z - 1.2;
         }
 
         dummy.position.copy(f.position);

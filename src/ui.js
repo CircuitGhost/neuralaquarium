@@ -50,6 +50,7 @@ export class UIManager {
     this.elSpecId = document.getElementById('val-spec-id');
     this.elSpecSwatch = document.getElementById('specimen-swatch');
     this.elSpecGen = document.getElementById('val-spec-gen');
+    this.elSpecStage = document.getElementById('val-spec-stage');
     this.elSpecEnergy = document.getElementById('val-spec-energy');
     this.elSpecEnergyBar = document.getElementById('bar-spec-energy');
     this.elSpecAge = document.getElementById('val-spec-age');
@@ -258,6 +259,150 @@ export class UIManager {
         this.elOverlay.classList.toggle('zen-mode');
       });
     }
+
+    // 13. Lineage Snapshot Bank Modal Dialog
+    const btnLineage = document.getElementById('btn-lineage-bank');
+    const modalLineage = document.getElementById('lineage-modal');
+    const btnCloseLineage = document.getElementById('btn-close-lineage');
+    if (btnLineage && modalLineage) {
+      btnLineage.addEventListener('click', () => {
+        this.renderLineageBank();
+        modalLineage.style.display = 'flex';
+      });
+    }
+    if (btnCloseLineage && modalLineage) {
+      btnCloseLineage.addEventListener('click', () => {
+        modalLineage.style.display = 'none';
+      });
+    }
+    if (modalLineage) {
+      modalLineage.addEventListener('click', (e) => {
+        if (e.target === modalLineage) modalLineage.style.display = 'none';
+      });
+    }
+
+    // 14. Save Lineage Prompt Dialog
+    const btnSaveHeader = document.getElementById('btn-save-lineage');
+    const btnSaveCurrent = document.getElementById('btn-save-current-lineage');
+    const modalSavePrompt = document.getElementById('save-prompt-modal');
+    const btnCloseSavePrompt = document.getElementById('btn-close-save-prompt');
+    const btnCancelSave = document.getElementById('btn-cancel-save');
+    const btnConfirmSave = document.getElementById('btn-confirm-save');
+    const inputLineageName = document.getElementById('input-lineage-name');
+
+    const openSavePrompt = () => {
+      const c = this.pop.selectedCreature;
+      if (!c) return;
+      if (inputLineageName) {
+        inputLineageName.value = `Lineage #${c.id} (Gen ${c.generation})`;
+      }
+      if (modalSavePrompt) modalSavePrompt.style.display = 'flex';
+      if (inputLineageName) setTimeout(() => inputLineageName.focus(), 50);
+    };
+
+    if (btnSaveHeader) btnSaveHeader.addEventListener('click', openSavePrompt);
+    if (btnSaveCurrent) btnSaveCurrent.addEventListener('click', openSavePrompt);
+
+    if (btnCloseSavePrompt && modalSavePrompt) {
+      btnCloseSavePrompt.addEventListener('click', () => {
+        modalSavePrompt.style.display = 'none';
+      });
+    }
+    if (btnCancelSave && modalSavePrompt) {
+      btnCancelSave.addEventListener('click', () => {
+        modalSavePrompt.style.display = 'none';
+      });
+    }
+    if (modalSavePrompt) {
+      modalSavePrompt.addEventListener('click', (e) => {
+        if (e.target === modalSavePrompt) modalSavePrompt.style.display = 'none';
+      });
+    }
+
+    if (btnConfirmSave) {
+      btnConfirmSave.addEventListener('click', () => {
+        const name = inputLineageName ? inputLineageName.value : '';
+        this.pop.saveLineagePreset(name);
+        if (modalSavePrompt) modalSavePrompt.style.display = 'none';
+        this.renderLineageBank();
+        soundEngine.playStimulate();
+      });
+    }
+  }
+
+  renderLineageBank() {
+    const list = document.getElementById('lineage-preset-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    const presets = this.pop.lineagePresets || this.pop.loadLineagePresets();
+
+    presets.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'lineage-card';
+
+      const hue = (p.traits && p.traits.hue !== undefined) ? p.traits.hue : 0.5;
+      const color = new THREE.Color().setHSL(hue, 0.9, 0.55);
+      const hex = '#' + color.getHexString();
+
+      card.innerHTML = `
+        <div class="lineage-swatch" style="background:${hex}; box-shadow:0 0 8px ${hex};"></div>
+        <div class="lineage-info">
+          <div class="lineage-title-row">
+            <span class="lineage-name">${p.name}</span>
+            <span class="lineage-tag ${p.builtIn ? 'builtin' : ''}">${p.builtIn ? 'Built-in' : 'Saved'}</span>
+            <span class="lineage-tag">Gen ${p.generation || 1}</span>
+          </div>
+          <div class="lineage-desc">${p.description || ''}</div>
+        </div>
+        <div class="lineage-actions">
+          <button class="btn-spawn-lineage" data-id="${p.id}" title="Spawn 2 organisms from this lineage into the aquarium">Spawn (2x)</button>
+          ${!p.builtIn ? `<button class="btn-del-lineage" data-id="${p.id}" title="Delete saved lineage">&times;</button>` : ''}
+        </div>
+      `;
+
+      // Spawn Action
+      const spawnBtn = card.querySelector('.btn-spawn-lineage');
+      if (spawnBtn) {
+        spawnBtn.addEventListener('click', () => {
+          this.pop.spawnFromPreset(p, 2);
+          soundEngine.playStimulate();
+          if (this.cam.setMode) this.cam.setMode('track');
+          const modal = document.getElementById('lineage-modal');
+          if (modal) modal.style.display = 'none';
+        });
+      }
+
+      // Delete Action (only custom user presets)
+      const delBtn = card.querySelector('.btn-del-lineage');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.pop.deleteLineagePreset(p.id);
+          this.renderLineageBank();
+        });
+      }
+
+      list.appendChild(card);
+    });
+  }
+
+  toggleBulletTime() {
+    this.bulletTime = !this.bulletTime;
+    const btnBullet = document.getElementById('btn-bullet-time');
+    const speedBtns = document.querySelectorAll('.btn-speed');
+    if (btnBullet) btnBullet.classList.toggle('active', this.bulletTime);
+
+    if (this.bulletTime) {
+      this.isPaused = false;
+      this.simSpeed = 0.22;
+      speedBtns.forEach(b => b.classList.remove('active'));
+    } else {
+      this.simSpeed = 1.0;
+      const btn1x = document.querySelector('.btn-speed[data-speed="1"]');
+      if (btn1x) btn1x.classList.add('active');
+    }
+    this.updatePlayPauseUI();
   }
 
   togglePause() {
@@ -408,6 +553,12 @@ export class UIManager {
         this.elSpecSwatch.style.boxShadow = `0 0 6px ${hex}`;
       }
       if (this.elSpecGen) this.elSpecGen.innerText = `Gen ${c.generation}`;
+      if (this.elSpecStage) {
+        const stage = c.lifeStage || (c.age < 12 ? 'fry' : (c.age < 90 ? 'adult' : 'elder'));
+        const stageNames = { fry: 'Fry (Juv)', adult: 'Adult', elder: 'Elder' };
+        this.elSpecStage.innerText = stageNames[stage] || 'Adult';
+        this.elSpecStage.className = `card-badge badge-${stage}`;
+      }
       if (this.elSpecEnergy) this.elSpecEnergy.innerText = `${Math.max(0, Math.round(c.energy))} / 220`;
       if (this.elSpecEnergyBar) {
         const pct = Math.min(100, Math.max(0, (c.energy / 220) * 100));

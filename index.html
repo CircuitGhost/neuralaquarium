@@ -108,6 +108,11 @@
               <span>Disperse Plankton</span>
               <kbd class="key-tag">F</kbd>
             </button>
+            <button id="btn-lineage-bank" class="action-btn action-btn-secondary">
+              <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+              <span>Lineage Bank</span>
+              <kbd class="key-tag">L</kbd>
+            </button>
             <button id="btn-reset" class="action-btn action-btn-secondary">
               <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
               <span>Re-seed Population</span>
@@ -122,12 +127,19 @@
           <div class="card-header">
             <div class="card-title-wrap">
               <span class="card-title">Neural Connectome</span>
+              <span id="val-spec-stage" class="card-badge badge-fry">Fry</span>
               <span id="val-spec-gen" class="card-badge">Gen 1</span>
             </div>
-            <button id="btn-clone-spec" class="clone-btn" title="Clone genome into 3 specimens (Key C)">
-              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              <span>Clone (3x)</span>
-            </button>
+            <div class="card-header-btns">
+              <button id="btn-save-lineage" class="icon-btn-header" title="Save this genetic lineage to Lineage Bank">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span>Save</span>
+              </button>
+              <button id="btn-clone-spec" class="clone-btn" title="Clone genome into 3 specimens (Key C)">
+                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Clone (3x)</span>
+              </button>
+            </div>
           </div>
 
           <!-- Energy Gauge -->
@@ -266,7 +278,51 @@
           <div class="shortcut-item"><kbd>B</kbd><span>Toggle 0.2x Bullet-time</span></div>
           <div class="shortcut-item"><kbd>F</kbd><span>Disperse plankton cluster</span></div>
           <div class="shortcut-item"><kbd>C</kbd><span>Clone selected genome</span></div>
+          <div class="shortcut-item"><kbd>L</kbd><span>Open Lineage Bank</span></div>
           <div class="shortcut-item"><kbd>H</kbd><span>Toggle Zen view (Clean HUD)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lineage Snapshot Bank Modal Dialog -->
+    <div id="lineage-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card glass-panel lineage-modal-card">
+        <div class="modal-header">
+          <div class="card-title-wrap">
+            <span class="modal-title">Lineage Snapshot Bank</span>
+            <span class="card-badge">Evolved Lines</span>
+          </div>
+          <button id="btn-close-lineage" class="icon-btn-ghost">&times;</button>
+        </div>
+        <p class="modal-description">Browse curated biological lineages and user-saved evolutionary champions. Spawn specific strains into the living ecosystem at will.</p>
+        
+        <div id="lineage-preset-list" class="lineage-list-container">
+          <!-- Populated dynamically by ui.js -->
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-save-current-lineage" class="action-btn action-btn-primary">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            <span>Save Current Specimen as Lineage</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save Lineage Prompt Modal -->
+    <div id="save-prompt-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal-card glass-panel save-prompt-card">
+        <div class="modal-header">
+          <span class="modal-title">Name Lineage Snapshot</span>
+          <button id="btn-close-save-prompt" class="icon-btn-ghost">&times;</button>
+        </div>
+        <div class="prompt-body">
+          <label for="input-lineage-name" class="prompt-label">Lineage Designation:</label>
+          <input type="text" id="input-lineage-name" class="lineage-name-input" placeholder="e.g. Cerulean Swift Glider" maxlength="40" />
+          <div class="prompt-actions">
+            <button id="btn-cancel-save" class="action-btn action-btn-secondary">Cancel</button>
+            <button id="btn-confirm-save" class="action-btn action-btn-primary">Save to Bank</button>
+          </div>
         </div>
       </div>
     </div>
