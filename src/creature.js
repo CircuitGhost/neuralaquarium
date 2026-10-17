@@ -452,14 +452,14 @@ export class Creature {
       this.reticleMat.opacity = 0.0;
     }
 
-    // 4. Animate Undulating Anatomy
-    this.animateAnatomy(thrustL, thrustR, tailBurst, dt);
+    // 4. Animate Undulating Anatomy with hydrodynamic banking
+    this.animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate);
 
     // 5. Update 3D Connectome Visual Pulses & Neuron Glows
     this.updateConnectomeVisuals();
 
-    // 6. Food Consumption Check
-    this.checkFoodConsumption(environment);
+    // 6. Food Consumption Check at Mouth Tip with Suction
+    this.checkFoodConsumption(environment, dt);
 
     // 7. Metabolic Energy Cost
     const metabolicCost = (0.8 + Math.pow(this.speed / this.maxSpeed, 2) * 2.2) * this.connectome.genome.traits.metabolism * dt;
@@ -522,22 +522,29 @@ export class Creature {
     return inputs;
   }
 
-  animateAnatomy(thrustL, thrustR, tailBurst, dt) {
+  animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate = 0) {
     const speedRatio = this.speed / (this.maxSpeed || 10.0);
 
-    // Fins flap based on thrust (gentle fluid cadence)
-    const finFlapFreq = 2.2 + speedRatio * 1.8;
-    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.clock * finFlapFreq) * 0.25 * (0.5 + Math.abs(thrustL));
-    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.clock * finFlapFreq) * 0.25 * (0.5 + Math.abs(thrustR));
+    // Dynamic banking roll into turns (fluid aquatic hydrodynamics)
+    const targetRoll = THREE.MathUtils.clamp(-steerRate * 0.16, -0.45, 0.45);
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, dt * 5.0);
+    this.mesh.rotation.z = this.roll;
 
-    // Tail Spine undulation (natural serpentine wave propagation)
-    const waveFreq = 2.0 + tailBurst * 2.2 + speedRatio * 1.5;
-    const waveAmp = 0.22 + tailBurst * 0.14;
+    // Fins flap based on differential thrust with 3D fluttering
+    const finFlapFreq = 2.4 + speedRatio * 2.2;
+    this.finL.rotation.z = Math.PI * 0.75 + Math.sin(this.clock * finFlapFreq) * 0.28 * (0.6 + Math.abs(thrustL));
+    this.finR.rotation.z = -Math.PI * 0.75 - Math.sin(this.clock * finFlapFreq) * 0.28 * (0.6 + Math.abs(thrustR));
+    this.finL.rotation.x = Math.cos(this.clock * finFlapFreq) * 0.16 * (0.5 + Math.abs(thrustL));
+    this.finR.rotation.x = Math.cos(this.clock * finFlapFreq) * 0.16 * (0.5 + Math.abs(thrustR));
+
+    // Tail Spine undulation (natural serpentine wave propagation with burst kick)
+    const waveFreq = 2.2 + tailBurst * 3.2 + speedRatio * 1.8;
+    const waveAmp = 0.24 + tailBurst * 0.20;
 
     this.tailSegments.forEach((seg, idx) => {
       const phase = this.clock * waveFreq - idx * 0.65;
       seg.rotation.y = Math.sin(phase) * waveAmp;
-      seg.rotation.x = Math.cos(phase * 0.5) * (waveAmp * 0.25);
+      seg.rotation.x = Math.cos(phase * 0.5) * (waveAmp * 0.22);
     });
   }
 
@@ -606,20 +613,30 @@ export class Creature {
     return null;
   }
 
-  checkFoodConsumption(environment) {
-    const eatenList = environment.consumeFoodNear(this.position, 1.8);
-    if (eatenList > 0) {
-      this.foodEaten += eatenList;
-      this.energy = Math.min(this.maxEnergy, this.energy + eatenList * 38.0);
-      this.fitness += eatenList * 120.0;
+  checkFoodConsumption(environment, dt = 0.016) {
+    // Exact mouth / snout point at front tip of creature
+    const mouthPos = _scratchVec3A.copy(this.position).addScaledVector(this.heading, 1.4);
+    const eatenCount = environment.attractAndConsumeFood(mouthPos, 3.4, 1.35, dt);
 
-      // Glow pulse body on feeding
-      this.headMat.emissiveIntensity = 0.55;
+    if (eatenCount > 0) {
+      this.foodEaten += eatenCount;
+      this.energy = Math.min(this.maxEnergy, this.energy + eatenCount * 38.0);
+      this.fitness += eatenCount * 120.0;
+
+      // Bioluminescent ingestion flash
+      this.headMat.emissiveIntensity = 0.95;
+
+      // Antennae twitch forward dip reflex on ingestion
+      this.antennaL.rotation.x += 0.35;
+      this.antennaR.rotation.x += 0.35;
+
       if (this.isSelected) {
         soundEngine.playFeed();
       }
     } else {
-      this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, 0.08);
+      this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, dt * 5.0);
+      this.antennaL.rotation.x = THREE.MathUtils.lerp(this.antennaL.rotation.x, 0.4, dt * 6.0);
+      this.antennaR.rotation.x = THREE.MathUtils.lerp(this.antennaR.rotation.x, 0.4, dt * 6.0);
     }
   }
 

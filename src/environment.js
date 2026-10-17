@@ -20,6 +20,7 @@ export class Environment {
     this.initCausticGodRays();
     this.initMarineSnow();
     this.initFoodSystem();
+    this.initFeedingEffects();
   }
 
   initLighting() {
@@ -286,13 +287,47 @@ export class Environment {
     this.scene.add(this.marineSnow);
   }
 
-  initFoodSystem() {
-    const foodGeo = new THREE.DodecahedronGeometry(0.3, 1);
-    this.foodMat = new THREE.MeshBasicMaterial({
-      color: 0x1db968,
+  initFeedingEffects() {
+    this.feedEffects = [];
+    const ringGeo = new THREE.RingGeometry(0.1, 0.45, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffaa,
       transparent: true,
-      opacity: 0.8,
-      wireframe: false
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.feedEffectGroup = new THREE.Group();
+    for (let i = 0; i < 20; i++) {
+      const mesh = new THREE.Mesh(ringGeo, ringMat.clone());
+      mesh.visible = false;
+      this.feedEffectGroup.add(mesh);
+      this.feedEffects.push({ mesh, active: false, scale: 0.2, alpha: 0.0 });
+    }
+    this.scene.add(this.feedEffectGroup);
+  }
+
+  triggerFeedingBurst(pos) {
+    const fx = this.feedEffects.find(e => !e.active);
+    if (!fx) return;
+    fx.active = true;
+    fx.scale = 0.35;
+    fx.alpha = 0.95;
+    fx.mesh.position.copy(pos);
+    fx.mesh.scale.set(fx.scale, fx.scale, fx.scale);
+    fx.mesh.material.opacity = fx.alpha;
+    fx.mesh.visible = true;
+  }
+
+  initFoodSystem() {
+    const foodGeo = new THREE.DodecahedronGeometry(0.34, 1);
+    this.foodMat = new THREE.MeshStandardMaterial({
+      color: 0x00ff88,
+      emissive: 0x00ff88,
+      emissiveIntensity: 0.55,
+      roughness: 0.25,
+      metalness: 0.1
     });
 
     this.foodMesh = new THREE.InstancedMesh(foodGeo, this.foodMat, this.maxFood);
@@ -315,7 +350,11 @@ export class Environment {
         (Math.random() * 2 - 1) * (b.z - 2.5) // Thin tank depth
       ),
       phase: Math.random() * Math.PI * 2,
-      scale: 0.8 + Math.random() * 0.4
+      scale: 0.8 + Math.random() * 0.4,
+      absorbing: false,
+      absorbTarget: null,
+      absorbProgress: 0.0,
+      currentScale: 1.0
     });
   }
 
@@ -332,7 +371,11 @@ export class Environment {
           Math.max(-b.z + 1, Math.min(b.z - 1, (Math.random() - 0.5) * 4.0))
         ),
         phase: Math.random() * Math.PI * 2,
-        scale: 0.85 + Math.random() * 0.4
+        scale: 0.85 + Math.random() * 0.4,
+        absorbing: false,
+        absorbTarget: null,
+        absorbProgress: 0.0,
+        currentScale: 1.0
       });
     }
   }
@@ -344,6 +387,7 @@ export class Environment {
 
     for (let i = 0; i < this.foodItems.length; i++) {
       const f = this.foodItems[i];
+      if (f.absorbing) continue; // Skip food currently being digested
       const distSq = pos.distanceToSquared(f.position);
       if (distSq < minDistSq) {
         minDistSq = distSq;
@@ -353,17 +397,40 @@ export class Environment {
     return closest;
   }
 
-  consumeFoodNear(pos, radius = 2.0) {
-    const rSq = radius * radius;
+  /**
+   * Attracts nearby plankton into mouth via hydrodynamic suction and digests upon contact
+   */
+  attractAndConsumeFood(mouthPos, suctionRadius = 3.6, consumeRadius = 1.35, dt = 0.016) {
+    const suctionSq = suctionRadius * suctionRadius;
+    const consumeSq = consumeRadius * consumeRadius;
     let count = 0;
 
-    for (let i = this.foodItems.length - 1; i >= 0; i--) {
-      if (pos.distanceToSquared(this.foodItems[i].position) < rSq) {
-        this.foodItems.splice(i, 1);
+    for (let i = 0; i < this.foodItems.length; i++) {
+      const f = this.foodItems[i];
+      if (f.absorbing) continue;
+
+      const distSq = mouthPos.distanceToSquared(f.position);
+      if (distSq < consumeSq) {
+        // Immediate consumption initiation!
+        f.absorbing = true;
+        f.absorbTarget = mouthPos.clone();
+        f.absorbProgress = 0.0;
+        this.triggerFeedingBurst(mouthPos);
         count++;
+      } else if (distSq < suctionSq) {
+        // Hydrodynamic vacuum suction pulling plankton directly into mouth
+        const dist = Math.sqrt(distSq);
+        const pull = (1.0 - dist / suctionRadius) * 14.0 * dt;
+        f.position.x += (mouthPos.x - f.position.x) * pull;
+        f.position.y += (mouthPos.y - f.position.y) * pull;
+        f.position.z += (mouthPos.z - f.position.z) * pull;
       }
     }
     return count;
+  }
+
+  consumeFoodNear(pos, radius = 2.0) {
+    return this.attractAndConsumeFood(pos, radius * 1.5, radius, 0.016);
   }
 
   update(dt, elapsed) {
@@ -372,30 +439,48 @@ export class Environment {
       this.spawnFoodRandom();
     }
 
-    // 2. Animate Food Particles (gentle floating drift & pulsation)
+    // 2. Animate Food Particles (smooth drift, suction lerping & scale shrink dissolution)
     const dummy = new THREE.Object3D();
     const b = this.bounds;
+
+    for (let i = this.foodItems.length - 1; i >= 0; i--) {
+      const f = this.foodItems[i];
+      if (f.absorbing) {
+        f.absorbProgress += dt * 8.0; // ~125ms rapid suction snap
+        if (f.absorbTarget) {
+          f.position.lerp(f.absorbTarget, Math.min(1.0, dt * 22.0));
+        }
+        f.currentScale = Math.max(0, f.scale * (1.0 - f.absorbProgress));
+        if (f.absorbProgress >= 1.0) {
+          this.foodItems.splice(i, 1);
+        }
+      } else {
+        f.currentScale = f.scale * (1.0 + Math.sin(elapsed * 1.5 + f.phase) * 0.14);
+      }
+    }
 
     for (let i = 0; i < this.maxFood; i++) {
       if (i < this.foodItems.length) {
         const f = this.foodItems[i];
-        // Organic tranquil drift
-        f.position.x += Math.sin(elapsed * 0.3 + f.phase) * dt * 0.25;
-        f.position.y += Math.cos(elapsed * 0.25 + f.phase * 1.2) * dt * 0.18;
-        f.position.z += Math.sin(elapsed * 0.2 + f.phase) * dt * 0.1;
+        if (!f.absorbing) {
+          // Organic tranquil drift
+          f.position.x += Math.sin(elapsed * 0.3 + f.phase) * dt * 0.25;
+          f.position.y += Math.cos(elapsed * 0.25 + f.phase * 1.2) * dt * 0.18;
+          f.position.z += Math.sin(elapsed * 0.2 + f.phase) * dt * 0.1;
 
-        if (f.position.x > b.x - 2) f.position.x = -b.x + 2;
-        if (f.position.x < -b.x + 2) f.position.x = b.x - 2;
-        if (f.position.y > b.y - 2) f.position.y = -b.y + 2;
-        if (f.position.y < -b.y + 2) f.position.y = b.y - 2;
-        if (f.position.z > b.z - 1) f.position.z = -b.z + 1;
-        if (f.position.z < -b.z + 1) f.position.z = b.z - 1;
+          if (f.position.x > b.x - 2) f.position.x = -b.x + 2;
+          if (f.position.x < -b.x + 2) f.position.x = b.x - 2;
+          if (f.position.y > b.y - 2) f.position.y = -b.y + 2;
+          if (f.position.y < -b.y + 2) f.position.y = b.y - 2;
+          if (f.position.z > b.z - 1) f.position.z = -b.z + 1;
+          if (f.position.z < -b.z + 1) f.position.z = b.z - 1;
+        }
 
         dummy.position.copy(f.position);
-        dummy.rotation.x = elapsed * 0.3 + f.phase;
-        dummy.rotation.y = elapsed * 0.25;
-        const pulse = f.scale * (1.0 + Math.sin(elapsed * 1.2 + f.phase) * 0.12);
-        dummy.scale.set(pulse, pulse, pulse);
+        dummy.rotation.x = elapsed * 0.4 + f.phase;
+        dummy.rotation.y = elapsed * 0.3;
+        const s = f.currentScale !== undefined ? f.currentScale : f.scale;
+        dummy.scale.set(s, s, s);
         dummy.updateMatrix();
         this.foodMesh.setMatrixAt(i, dummy.matrix);
       } else {
@@ -406,6 +491,20 @@ export class Environment {
       }
     }
     this.foodMesh.instanceMatrix.needsUpdate = true;
+
+    // 2b. Animate Feeding Absorption Rings
+    this.feedEffects.forEach(fx => {
+      if (fx.active) {
+        fx.scale += dt * 5.2;
+        fx.alpha = Math.max(0, fx.alpha - dt * 4.2);
+        fx.mesh.scale.set(fx.scale, fx.scale, fx.scale);
+        fx.mesh.material.opacity = fx.alpha;
+        if (fx.alpha <= 0) {
+          fx.active = false;
+          fx.mesh.visible = false;
+        }
+      }
+    });
 
     // 3. Animate Procedural Kelp Swaying in Ocean Current (Slow, hypnotic underwater surge)
     this.kelpStalks.forEach(stalk => {
