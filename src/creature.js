@@ -204,6 +204,52 @@ export class Creature {
     this.reticle = new THREE.Mesh(ringGeo, this.reticleMat);
     this.reticle.rotation.x = Math.PI * 0.5;
     this.mesh.add(this.reticle);
+
+    // 5. Internal Digestive Stomach Pouch & Nutrient Bolus
+    const stomachGeo = new THREE.SphereGeometry(0.48, 14, 10);
+    stomachGeo.scale(0.85, 0.7, 1.15);
+    this.stomachMat = new THREE.MeshPhysicalMaterial({
+      color: 0x10b981,
+      emissive: 0x059669,
+      emissiveIntensity: 0.25,
+      transparent: true,
+      opacity: 0.65,
+      roughness: 0.25,
+      transmission: 0.35,
+      ior: 1.3
+    });
+    this.stomachMesh = new THREE.Mesh(stomachGeo, this.stomachMat);
+    this.stomachMesh.position.set(0, -0.15, -0.15);
+    this.mesh.add(this.stomachMesh);
+
+    // Glowing food bolus that pulses and dissolves over time
+    const bolusGeo = new THREE.SphereGeometry(0.28, 12, 10);
+    this.bolusMat = new THREE.MeshBasicMaterial({
+      color: 0xfbbf24,
+      transparent: true,
+      opacity: 0.0
+    });
+    this.bolusMesh = new THREE.Mesh(bolusGeo, this.bolusMat);
+    this.bolusMesh.scale.set(0.001, 0.001, 0.001);
+    this.stomachMesh.add(this.bolusMesh);
+    this.bolusScale = 0.0;
+
+    // 6. Ventral Spinal Canal running down tail vertebrae
+    this.spinalNodes = [];
+    for (let i = 0; i < this.tailSegments.length; i++) {
+      const canalGeo = new THREE.CylinderGeometry(0.04, 0.03, 0.55, 6);
+      canalGeo.rotateX(Math.PI * 0.5);
+      const canalMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.65,
+        blending: THREE.AdditiveBlending
+      });
+      const canalMesh = new THREE.Mesh(canalGeo, canalMat);
+      canalMesh.position.set(0, 0.06, -0.1);
+      this.tailSegments[i].add(canalMesh);
+      this.spinalNodes.push(canalMesh);
+    }
   }
 
   /**
@@ -457,6 +503,9 @@ export class Creature {
     // 4. Animate Undulating Anatomy with hydrodynamic banking
     this.animateAnatomy(thrustL, thrustR, tailBurst, dt, steerRate);
 
+    // 4b. Hydrodynamic Cavitation Micro-Wake Particles
+    this.emitHydrodynamicWakes(environment, tailBurst, dt);
+
     // 5. Update 3D Connectome Visual Pulses & Neuron Glows
     this.updateConnectomeVisuals();
 
@@ -561,6 +610,34 @@ export class Creature {
       seg.rotation.x = Math.cos(segPhase * 0.5) * (jointAmp * 0.45);
       seg.rotation.z = Math.sin(segPhase * 0.5) * (jointAmp * 0.18);
     });
+
+    // Animate Internal Digestive Bolus Dissolution & Nutrient Absorption
+    if (this.bolusScale > 0.001) {
+      this.bolusScale = Math.max(0, this.bolusScale - dt * 0.28);
+      const pulse = 1.0 + Math.sin(this.clock * 7.0) * 0.14;
+      const s = this.bolusScale * pulse;
+      if (this.bolusMesh) this.bolusMesh.scale.set(s, s, s);
+      if (this.bolusMat) this.bolusMat.opacity = Math.min(1.0, this.bolusScale * 1.4);
+      if (this.stomachMat) {
+        this.stomachMat.emissiveIntensity = THREE.MathUtils.lerp(this.stomachMat.emissiveIntensity, 0.25 + this.bolusScale * 0.4, dt * 3.5);
+      }
+    } else {
+      if (this.bolusMesh) this.bolusMesh.scale.set(0.001, 0.001, 0.001);
+      if (this.bolusMat) this.bolusMat.opacity = 0;
+      if (this.stomachMat) {
+        this.stomachMat.emissiveIntensity = THREE.MathUtils.lerp(this.stomachMat.emissiveIntensity, 0.2, dt * 2.0);
+      }
+    }
+
+    // Ventral spinal cord glows with active motor impulses and metabolic energy
+    if (this.spinalNodes) {
+      const motorPulse = Math.abs(thrustL) + Math.abs(thrustR) + tailBurst;
+      this.spinalNodes.forEach((node, idx) => {
+        const wave = Math.sin(this.tailPhase - idx * 0.6);
+        const intensity = 0.35 + (motorPulse * 0.35) + wave * 0.2 + (this.bolusScale * 0.3);
+        node.material.opacity = THREE.MathUtils.clamp(intensity, 0.15, 0.95);
+      });
+    }
   }
 
   updateConnectomeVisuals() {
@@ -638,6 +715,11 @@ export class Creature {
       this.energy = Math.min(this.maxEnergy, this.energy + eatenCount * 38.0);
       this.fitness += eatenCount * 120.0;
 
+      // Ingestion into internal digestive tract pouch
+      this.bolusScale = 1.0;
+      if (this.bolusMat) this.bolusMat.opacity = 0.95;
+      if (this.stomachMat) this.stomachMat.emissiveIntensity = 0.85;
+
       // Bioluminescent ingestion flash
       this.headMat.emissiveIntensity = 0.95;
 
@@ -652,6 +734,41 @@ export class Creature {
       this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, dt * 5.0);
       this.antennaL.rotation.x = THREE.MathUtils.lerp(this.antennaL.rotation.x, 0.4, dt * 6.0);
       this.antennaR.rotation.x = THREE.MathUtils.lerp(this.antennaR.rotation.x, 0.4, dt * 6.0);
+    }
+  }
+
+  emitHydrodynamicWakes(environment, tailBurst, dt) {
+    if (!environment || !environment.emitWake || this.isDead || this.speed < 0.45) return;
+
+    this.wakeTimer = (this.wakeTimer || 0) + dt;
+    const emitInterval = Math.max(0.025, 0.08 - (this.speed / 10.0) * 0.04);
+
+    if (this.wakeTimer >= emitInterval) {
+      this.wakeTimer = 0;
+
+      // 1. Caudal fluke wake vortex emission
+      if (this.tailSegments && this.tailSegments.length > 0) {
+        const flukeSeg = this.tailSegments[this.tailSegments.length - 1];
+        flukeSeg.getWorldPosition(_scratchVec3A);
+        _scratchVec3B.copy(this.heading).multiplyScalar(-this.speed * 0.12);
+        _scratchVec3B.x += (Math.random() - 0.5) * 0.2;
+        _scratchVec3B.y += (Math.random() - 0.5) * 0.2;
+        environment.emitWake(_scratchVec3A, _scratchVec3B, this.color, 0.9 + tailBurst * 0.5);
+      }
+
+      // 2. Fin tip vortices on sprints or high speeds
+      if (tailBurst > 0.3 || this.speed > 5.0) {
+        if (this.finL) {
+          this.finL.getWorldPosition(_scratchVec3A);
+          _scratchVec3B.copy(this.heading).multiplyScalar(-this.speed * 0.08);
+          environment.emitWake(_scratchVec3A, _scratchVec3B, this.color, 0.7);
+        }
+        if (this.finR) {
+          this.finR.getWorldPosition(_scratchVec3A);
+          _scratchVec3B.copy(this.heading).multiplyScalar(-this.speed * 0.08);
+          environment.emitWake(_scratchVec3A, _scratchVec3B, this.color, 0.7);
+        }
+      }
     }
   }
 

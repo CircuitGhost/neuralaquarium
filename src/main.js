@@ -228,7 +228,7 @@ class SimulationApp {
     if (!this.ui.isPaused) {
       const dt = delta * this.ui.simSpeed;
       this.population.update(dt);
-      this.environment.update(dt, elapsed);
+      this.environment.update(dt, elapsed, this.population.creatures);
     }
 
     // Camera Rig & Tracking Controller (Smooth 2.5D Translation)

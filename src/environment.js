@@ -21,6 +21,10 @@ export class Environment {
     this.initMarineSnow();
     this.initFoodSystem();
     this.initFeedingEffects();
+    this.initCaustics();
+    this.initSubstrateShadows();
+    this.initSubstrateAnemones();
+    this.initHydrodynamicWakes();
   }
 
   initLighting() {
@@ -433,7 +437,471 @@ export class Environment {
     return this.attractAndConsumeFood(pos, radius * 1.5, radius, 0.016);
   }
 
-  update(dt, elapsed) {
+  // --------------------------------------------------------------------------
+  // Graphics Improvement 1: Animated Sunlight Floor Caustics
+  // --------------------------------------------------------------------------
+  initCaustics() {
+    const b = this.bounds;
+    this.causticCanvas = document.createElement('canvas');
+    this.causticCanvas.width = 128;
+    this.causticCanvas.height = 128;
+    this.causticCtx = this.causticCanvas.getContext('2d');
+    this.causticImageData = this.causticCtx.createImageData(128, 128);
+    this.causticTex = new THREE.CanvasTexture(this.causticCanvas);
+    this.causticTex.wrapS = THREE.RepeatWrapping;
+    this.causticTex.wrapT = THREE.RepeatWrapping;
+    this.causticTex.repeat.set(4, 2);
+
+    const causticGeo = new THREE.PlaneGeometry(b.x * 2 + 12, b.z * 2 + 8, 16, 16);
+    this.causticMat = new THREE.MeshBasicMaterial({
+      map: this.causticTex,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    this.causticPlane = new THREE.Mesh(causticGeo, this.causticMat);
+    this.causticPlane.rotation.x = -Math.PI * 0.5;
+    this.causticPlane.position.set(0, -b.y + 0.35, 0);
+    this.scene.add(this.causticPlane);
+    this.lastCausticUpdate = 0;
+  }
+
+  updateCaustics(dt, elapsed) {
+    if (elapsed - this.lastCausticUpdate < 0.038) return;
+    this.lastCausticUpdate = elapsed;
+
+    const data = this.causticImageData.data;
+    const w = 128;
+    const h = 128;
+    const t = elapsed * 1.5;
+
+    let ptr = 0;
+    for (let y = 0; y < h; y++) {
+      const ny = y * 0.09;
+      for (let x = 0; x < w; x++) {
+        const nx = x * 0.09;
+        // Superimposed harmonic sine interference creating realistic cellular caustics
+        const v1 = Math.sin(nx + t * 0.7);
+        const v2 = Math.sin(ny - t * 0.5);
+        const v3 = Math.sin((nx + ny) * 0.8 + t * 0.85);
+        const v4 = Math.sin(Math.sqrt(nx * nx + ny * ny) * 1.1 - t * 0.75);
+        const sum = (v1 + v2 + v3 + v4) * 0.25;
+        const intensity = Math.pow(Math.max(0, sum * 0.5 + 0.5), 3.2) * 255;
+
+        data[ptr] = 56;
+        data[ptr + 1] = Math.min(255, 180 + intensity * 0.3);
+        data[ptr + 2] = 255;
+        data[ptr + 3] = intensity;
+        ptr += 4;
+      }
+    }
+    this.causticCtx.putImageData(this.causticImageData, 0, 0);
+    this.causticTex.needsUpdate = true;
+  }
+
+  // --------------------------------------------------------------------------
+  // Graphics Improvement 1b: Soft Substrate Contact Shadows
+  // --------------------------------------------------------------------------
+  initSubstrateShadows() {
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = 64;
+    shadowCanvas.height = 64;
+    const sctx = shadowCanvas.getContext('2d');
+    const grad = sctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grad.addColorStop(0, 'rgba(1, 10, 22, 0.75)');
+    grad.addColorStop(0.5, 'rgba(2, 14, 28, 0.45)');
+    grad.addColorStop(1, 'rgba(2, 14, 28, 0.0)');
+    sctx.fillStyle = grad;
+    sctx.fillRect(0, 0, 64, 64);
+
+    const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+    const shadowGeo = new THREE.PlaneGeometry(3.2, 2.0);
+    this.shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false
+    });
+
+    this.maxShadows = 64;
+    this.shadowMesh = new THREE.InstancedMesh(shadowGeo, this.shadowMat, this.maxShadows);
+    this.shadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    const dummy = new THREE.Object3D();
+    dummy.position.set(0, -9999, 0);
+    dummy.scale.set(0, 0, 0);
+    dummy.updateMatrix();
+    for (let i = 0; i < this.maxShadows; i++) {
+      this.shadowMesh.setMatrixAt(i, dummy.matrix);
+    }
+    this.shadowMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.shadowMesh);
+    this.shadowDummy = dummy;
+  }
+
+  updateSubstrateShadows(creatures) {
+    if (!this.shadowMesh || !creatures) return;
+    const b = this.bounds;
+    const dummy = this.shadowDummy;
+
+    for (let i = 0; i < this.maxShadows; i++) {
+      if (i < creatures.length && !creatures[i].isDead) {
+        const c = creatures[i];
+        const dune = Math.sin(c.position.x * 0.12) * 0.8 + Math.cos(c.position.z * 0.3) * 0.4;
+        const floorY = -b.y + 0.35 + dune;
+        const heightAboveFloor = Math.max(0.1, c.position.y - floorY);
+
+        const scaleSpread = 0.8 + Math.min(heightAboveFloor * 0.07, 1.8);
+        const headingAngle = c.headingAngle || 0;
+
+        dummy.position.set(c.position.x, floorY + 0.04, c.position.z);
+        dummy.rotation.set(-Math.PI * 0.5, 0, headingAngle);
+        dummy.scale.set(scaleSpread * 1.5, scaleSpread * 0.9, 1.0);
+        dummy.updateMatrix();
+        this.shadowMesh.setMatrixAt(i, dummy.matrix);
+      } else {
+        dummy.position.set(0, -9999, 0);
+        dummy.scale.set(0, 0, 0);
+        dummy.updateMatrix();
+        this.shadowMesh.setMatrixAt(i, dummy.matrix);
+      }
+    }
+    this.shadowMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // --------------------------------------------------------------------------
+  // Graphics Improvement 3: Responsive Substrate Flora (Sea Anemones)
+  // --------------------------------------------------------------------------
+  initSubstrateAnemones() {
+    const b = this.bounds;
+    this.anemones = [];
+    this.anemoneGroup = new THREE.Group();
+    this.scene.add(this.anemoneGroup);
+
+    const anemoneColors = [
+      { base: 0xd946ef, glow: 0xf0abfc }, // Rose amethyst
+      { base: 0x06b6d4, glow: 0x67e8f9 }, // Cyan bioluminescent
+      { base: 0x10b981, glow: 0x6ee7b7 }, // Emerald polyp
+      { base: 0x8b5cf6, glow: 0xc4b5fd }, // Violet deep sea
+      { base: 0xf59e0b, glow: 0xfde68a }  // Amber seaflower
+    ];
+
+    const numAnemones = 22;
+    for (let i = 0; i < numAnemones; i++) {
+      const palette = anemoneColors[i % anemoneColors.length];
+      const ax = (Math.random() * 2 - 1) * (b.x - 6);
+      const az = (Math.random() * 2 - 1) * (b.z - 1.5);
+      const dune = Math.sin(ax * 0.12) * 0.8 + Math.cos(az * 0.3) * 0.4;
+      const ay = -b.y + 0.3 + dune;
+
+      const singleGroup = new THREE.Group();
+      singleGroup.position.set(ax, ay, az);
+
+      const stalkHeight = 0.8 + Math.random() * 0.5;
+      const stalkGeo = new THREE.CylinderGeometry(0.22, 0.38, stalkHeight, 10);
+      stalkGeo.translate(0, stalkHeight * 0.5, 0);
+      const stalkMat = new THREE.MeshStandardMaterial({
+        color: palette.base,
+        roughness: 0.45,
+        metalness: 0.1
+      });
+      const stalkMesh = new THREE.Mesh(stalkGeo, stalkMat);
+      singleGroup.add(stalkMesh);
+
+      const crownGroup = new THREE.Group();
+      crownGroup.position.y = stalkHeight;
+      singleGroup.add(crownGroup);
+
+      const tentacleCount = 10;
+      const tentacles = [];
+      const tentGeo = new THREE.ConeGeometry(0.06, 1.1, 5);
+      tentGeo.translate(0, 0.55, 0);
+      const tentMat = new THREE.MeshStandardMaterial({
+        color: palette.glow,
+        emissive: palette.glow,
+        emissiveIntensity: 0.35,
+        roughness: 0.3
+      });
+
+      for (let t = 0; t < tentacleCount; t++) {
+        const angle = (t / tentacleCount) * Math.PI * 2;
+        const tentHolder = new THREE.Group();
+        tentHolder.rotation.y = angle;
+
+        const tentMesh = new THREE.Mesh(tentGeo, tentMat);
+        tentMesh.rotation.z = 0.55 + Math.random() * 0.18;
+        tentHolder.add(tentMesh);
+        crownGroup.add(tentHolder);
+
+        tentacles.push({
+          holder: tentHolder,
+          mesh: tentMesh,
+          baseTilt: tentMesh.rotation.z,
+          swayOffset: Math.random() * Math.PI * 2
+        });
+      }
+
+      this.anemoneGroup.add(singleGroup);
+
+      this.anemones.push({
+        group: singleGroup,
+        crown: crownGroup,
+        stalk: stalkMesh,
+        stalkHeight,
+        tentacles,
+        pos: new THREE.Vector3(ax, ay, az),
+        expansion: 1.0,
+        targetExpansion: 1.0,
+        swaySpeed: 1.2 + Math.random() * 0.8,
+        palette
+      });
+    }
+  }
+
+  updateSubstrateAnemones(dt, elapsed, creatures) {
+    if (!this.anemones) return;
+
+    for (let i = 0; i < this.anemones.length; i++) {
+      const a = this.anemones[i];
+      let nearestDist = 999.0;
+
+      if (creatures) {
+        for (let j = 0; j < creatures.length; j++) {
+          const c = creatures[j];
+          if (!c.isDead) {
+            const dx = c.position.x - a.pos.x;
+            const dy = c.position.y - a.pos.y;
+            const dz = c.position.z - a.pos.z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < nearestDist) nearestDist = d;
+          }
+        }
+      }
+
+      // Proximity retraction reflex: retract tightly when creature is within 3.8 units
+      if (nearestDist < 3.8) {
+        a.targetExpansion = 0.16;
+      } else {
+        a.targetExpansion = 1.0;
+      }
+
+      const lerpSpeed = (a.targetExpansion < a.expansion) ? 7.5 : 1.8;
+      a.expansion = THREE.MathUtils.lerp(a.expansion, a.targetExpansion, dt * lerpSpeed);
+
+      a.crown.scale.set(a.expansion, a.expansion, a.expansion);
+      a.stalk.scale.set(1.0 + (1.0 - a.expansion) * 0.35, 0.55 + a.expansion * 0.45, 1.0 + (1.0 - a.expansion) * 0.35);
+
+      const swayTime = elapsed * a.swaySpeed;
+      a.tentacles.forEach(tent => {
+        const sway = Math.sin(swayTime + tent.swayOffset) * 0.12 * a.expansion;
+        tent.mesh.rotation.z = tent.baseTilt * a.expansion + sway;
+      });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Graphics Improvement 5: Hydrodynamic Cavitation & Micro-Wake Particles
+  // --------------------------------------------------------------------------
+  initHydrodynamicWakes() {
+    this.maxWakeParticles = 480;
+    this.wakePool = [];
+    const positions = new Float32Array(this.maxWakeParticles * 3);
+    const colors = new Float32Array(this.maxWakeParticles * 3);
+
+    for (let i = 0; i < this.maxWakeParticles; i++) {
+      positions[i * 3 + 0] = 0;
+      positions[i * 3 + 1] = -9999;
+      positions[i * 3 + 2] = 0;
+      colors[i * 3 + 0] = 0.2;
+      colors[i * 3 + 1] = 0.85;
+      colors[i * 3 + 2] = 1.0;
+
+      this.wakePool.push({
+        active: false,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        color: new THREE.Color(),
+        life: 0,
+        maxLife: 1.0
+      });
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Circular soft bioluminescent particle glow texture
+    const pCanvas = document.createElement('canvas');
+    pCanvas.width = 32;
+    pCanvas.height = 32;
+    const pctx = pCanvas.getContext('2d');
+    const pGrad = pctx.createRadialGradient(16, 16, 0, 16, 16, 15);
+    pGrad.addColorStop(0, 'rgba(255,255,255,1.0)');
+    pGrad.addColorStop(0.35, 'rgba(125,235,255,0.75)');
+    pGrad.addColorStop(0.8, 'rgba(10,140,255,0.2)');
+    pGrad.addColorStop(1.0, 'rgba(0,40,120,0)');
+    pctx.fillStyle = pGrad;
+    pctx.fillRect(0, 0, 32, 32);
+
+    const pTex = new THREE.CanvasTexture(pCanvas);
+
+    const mat = new THREE.PointsMaterial({
+      map: pTex,
+      vertexColors: true,
+      size: 0.38,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    this.wakePoints = new THREE.Points(geo, mat);
+    this.scene.add(this.wakePoints);
+    this.wakeIndex = 0;
+  }
+
+  emitWake(pos, vel, color, maxLife = 1.2) {
+    if (!this.wakePool) return;
+    const p = this.wakePool[this.wakeIndex];
+    this.wakeIndex = (this.wakeIndex + 1) % this.maxWakeParticles;
+
+    p.active = true;
+    p.pos.copy(pos);
+    p.vel.copy(vel);
+    if (color) p.color.copy(color);
+    else p.color.setRGB(0.2, 0.85, 1.0);
+    p.life = maxLife;
+    p.maxLife = maxLife;
+  }
+
+  updateHydrodynamicWakes(dt) {
+    if (!this.wakePoints) return;
+    const posAttr = this.wakePoints.geometry.attributes.position;
+    const colAttr = this.wakePoints.geometry.attributes.color;
+    const pArr = posAttr.array;
+    const cArr = colAttr.array;
+
+    for (let i = 0; i < this.maxWakeParticles; i++) {
+      const p = this.wakePool[i];
+      const idx3 = i * 3;
+
+      if (p.active) {
+        p.life -= dt;
+        if (p.life <= 0) {
+          p.active = false;
+          pArr[idx3 + 1] = -9999;
+          continue;
+        }
+
+        // Hydrodynamic drag & slow buoyant micro-bubble ascension
+        p.vel.multiplyScalar(Math.max(0, 1.0 - dt * 2.2));
+        p.pos.addScaledVector(p.vel, dt);
+        p.pos.y += dt * 0.14;
+
+        pArr[idx3 + 0] = p.pos.x;
+        pArr[idx3 + 1] = p.pos.y;
+        pArr[idx3 + 2] = p.pos.z;
+
+        // Fading alpha and bioluminescent dimming
+        const progress = 1.0 - (p.life / p.maxLife);
+        const alpha = Math.sin((1.0 - progress) * Math.PI * 0.5);
+
+        cArr[idx3 + 0] = p.color.r * alpha;
+        cArr[idx3 + 1] = p.color.g * alpha;
+        cArr[idx3 + 2] = p.color.b * alpha;
+      } else {
+        pArr[idx3 + 1] = -9999;
+      }
+    }
+
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+  }
+
+  // --------------------------------------------------------------------------
+  // Graphics Improvement 2: Circadian Oceanic Lighting Cycle
+  // --------------------------------------------------------------------------
+  updateLightingCycle(dt, elapsed) {
+    const cycleDuration = 200.0;
+    const progress = (elapsed % cycleDuration) / cycleDuration;
+
+    let sunIntensity, ambientIntensity, causticOpacity, godRayOpacity;
+    const sunColor = new THREE.Color();
+    const ambColor = new THREE.Color();
+
+    if (progress < 0.38) {
+      // Midday: crisp sunlight penetration, vibrant cyan water
+      sunIntensity = 1.25;
+      ambientIntensity = 0.85;
+      causticOpacity = 0.32;
+      godRayOpacity = 0.014;
+      sunColor.setHex(0x38bdf8);
+      ambColor.setHex(0x051b30);
+    } else if (progress < 0.52) {
+      // Twilight: warm amber/indigo sunset glow
+      const t = (progress - 0.38) / 0.14;
+      sunIntensity = THREE.MathUtils.lerp(1.25, 0.2, t);
+      ambientIntensity = THREE.MathUtils.lerp(0.85, 0.35, t);
+      causticOpacity = THREE.MathUtils.lerp(0.32, 0.08, t);
+      godRayOpacity = THREE.MathUtils.lerp(0.014, 0.003, t);
+      sunColor.lerpColors(new THREE.Color(0x38bdf8), new THREE.Color(0xf59e0b), t);
+      ambColor.lerpColors(new THREE.Color(0x051b30), new THREE.Color(0x1e1b4b), t);
+    } else if (progress < 0.82) {
+      // Midnight Abyssal: deep navy darkness, intense bioluminescent contrast
+      sunIntensity = 0.08;
+      ambientIntensity = 0.22;
+      causticOpacity = 0.04;
+      godRayOpacity = 0.002;
+      sunColor.setHex(0x312e81);
+      ambColor.setHex(0x020817);
+    } else {
+      // Dawn: emerald morning rays breaking through water surface
+      const t = (progress - 0.82) / 0.18;
+      sunIntensity = THREE.MathUtils.lerp(0.08, 1.25, t);
+      ambientIntensity = THREE.MathUtils.lerp(0.22, 0.85, t);
+      causticOpacity = THREE.MathUtils.lerp(0.04, 0.32, t);
+      godRayOpacity = THREE.MathUtils.lerp(0.002, 0.014, t);
+      sunColor.lerpColors(new THREE.Color(0x312e81), new THREE.Color(0x38bdf8), t);
+      ambColor.lerpColors(new THREE.Color(0x020817), new THREE.Color(0x051b30), t);
+    }
+
+    this.sunLight.intensity = THREE.MathUtils.lerp(this.sunLight.intensity, sunIntensity, dt * 2.0);
+    this.ambientLight.intensity = THREE.MathUtils.lerp(this.ambientLight.intensity, ambientIntensity, dt * 2.0);
+    this.sunLight.color.lerp(sunColor, dt * 2.0);
+    this.ambientLight.color.lerp(ambColor, dt * 2.0);
+
+    if (this.causticMat) {
+      this.causticMat.opacity = causticOpacity;
+    }
+    if (this.godRays) {
+      this.godRays.forEach(r => {
+        r.mesh.material.opacity = godRayOpacity;
+      });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Ecosystem Main Frame Update Loop
+  // --------------------------------------------------------------------------
+  update(dt, elapsed, creatures = null) {
+    // Circadian Oceanic Lighting Cycle
+    this.updateLightingCycle(dt, elapsed);
+
+    // Dynamic Floor Caustics
+    this.updateCaustics(dt, elapsed);
+
+    // Substrate Contact Shadows
+    this.updateSubstrateShadows(creatures);
+
+    // Responsive Substrate Flora
+    this.updateSubstrateAnemones(dt, elapsed, creatures);
+
+    // Hydrodynamic Cavitation Micro-Wake Particles
+    this.updateHydrodynamicWakes(dt);
+
     // 1. Maintain Minimum Food Density
     if (this.foodItems.length < this.maxFood * 0.45 && Math.random() < 0.25) {
       this.spawnFoodRandom();
@@ -446,7 +914,7 @@ export class Environment {
     for (let i = this.foodItems.length - 1; i >= 0; i--) {
       const f = this.foodItems[i];
       if (f.absorbing) {
-        f.absorbProgress += dt * 8.0; // ~125ms rapid suction snap
+        f.absorbProgress += dt * 8.0;
         if (f.absorbTarget) {
           f.position.lerp(f.absorbTarget, Math.min(1.0, dt * 22.0));
         }
@@ -463,7 +931,6 @@ export class Environment {
       if (i < this.foodItems.length) {
         const f = this.foodItems[i];
         if (!f.absorbing) {
-          // Organic tranquil drift
           f.position.x += Math.sin(elapsed * 0.3 + f.phase) * dt * 0.25;
           f.position.y += Math.cos(elapsed * 0.25 + f.phase * 1.2) * dt * 0.18;
           f.position.z += Math.sin(elapsed * 0.2 + f.phase) * dt * 0.1;
@@ -506,27 +973,47 @@ export class Environment {
       }
     });
 
-    // 3. Animate Procedural Kelp Swaying in Ocean Current (Slow, hypnotic underwater surge)
+    // 3. Animate Procedural Kelp Swaying + Creature Proximity Deflection
     this.kelpStalks.forEach(stalk => {
       const swayTime = elapsed * stalk.swaySpeed + stalk.phase;
       const numNodes = stalk.nodes.length;
+      const stalkX = stalk.group.position.x;
+      const stalkZ = stalk.group.position.z;
+
+      let deflectX = 0;
+      let deflectZ = 0;
+      if (creatures) {
+        for (let i = 0; i < creatures.length; i++) {
+          const c = creatures[i];
+          if (!c.isDead) {
+            const dx = stalkX - c.position.x;
+            const dz = stalkZ - c.position.z;
+            const distSq = dx * dx + dz * dz;
+            if (distSq < 16.0) {
+              const dist = Math.sqrt(distSq) + 0.001;
+              const pushStrength = (1.0 - dist / 4.0) * 0.28;
+              deflectX += (dx / dist) * pushStrength;
+              deflectZ += (dz / dist) * pushStrength;
+            }
+          }
+        }
+      }
+
       stalk.nodes.forEach((node, idx) => {
-        // Nodes higher up bend gracefully with traveling tidal wave
         const heightFactor = (idx + 1) / numNodes;
-        const waveZ = Math.sin(swayTime - idx * 0.14) * (stalk.amp * heightFactor);
-        const waveX = Math.cos(swayTime * 0.65 - idx * 0.1) * (stalk.amp * 0.25 * heightFactor);
+        const waveZ = Math.sin(swayTime - idx * 0.14) * (stalk.amp * heightFactor) + deflectZ * heightFactor;
+        const waveX = Math.cos(swayTime * 0.65 - idx * 0.1) * (stalk.amp * 0.25 * heightFactor) + deflectX * heightFactor;
         node.rotation.z = waveZ;
         node.rotation.x = waveX;
       });
     });
 
-    // 4. Animate Volumetric God Rays (Slow, tranquil shafts of sunlight)
+    // 4. Animate Volumetric God Rays
     this.godRays.forEach(ray => {
       ray.mesh.position.x += Math.sin(elapsed * ray.speed + ray.phase) * dt * 0.25;
-      ray.mesh.material.opacity = 0.01 + Math.sin(elapsed * 0.5 + ray.phase) * 0.004;
     });
 
-    // 5. Animate Marine Snow Particulates (Gentle, slow suspension)
+    // 5. Animate Marine Snow Particulates
     const positions = this.marineSnow.geometry.attributes.position.array;
     for (let i = 0; i < this.snowCount; i++) {
       const idx = i * 3;
