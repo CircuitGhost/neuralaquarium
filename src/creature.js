@@ -712,7 +712,7 @@ export class Creature {
 
     if (eatenCount > 0) {
       this.foodEaten += eatenCount;
-      this.energy = Math.min(this.maxEnergy, this.energy + eatenCount * 38.0);
+      this.energy = Math.min(this.maxEnergy, this.energy + eatenCount * 28.0);
       this.fitness += eatenCount * 120.0;
 
       // Ingestion into internal digestive tract pouch
@@ -728,7 +728,9 @@ export class Creature {
       this.antennaR.rotation.x += 0.35;
 
       if (this.isSelected) {
-        soundEngine.playFeed();
+        soundEngine.playFeed(1.0);
+      } else {
+        soundEngine.playFeed(0.28);
       }
     } else {
       this.headMat.emissiveIntensity = THREE.MathUtils.lerp(this.headMat.emissiveIntensity, 0.15, dt * 5.0);
@@ -773,11 +775,11 @@ export class Creature {
   }
 
   canReproduce() {
-    return this.energy > 175.0 && this.age > 8.0;
+    return this.energy > 185.0 && this.age > 12.0 && this.foodEaten >= 3;
   }
 
   reproduce() {
-    this.energy *= 0.55;
+    this.energy -= 80.0;
     const childGenome = this.connectome.cloneAndMutate();
     const spawnPos = this.position.clone().add(
       new THREE.Vector3((Math.random() - 0.5) * 2.0, (Math.random() - 0.5) * 2.0, (Math.random() - 0.5) * 2.0)

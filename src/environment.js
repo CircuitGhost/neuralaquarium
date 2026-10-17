@@ -6,8 +6,8 @@ export class Environment {
     // 2.5D Aquarium Tank Bounds: Wide (X), Tall (Y), Thin Depth (Z)
     this.bounds = new THREE.Vector3(50, 28, 7);
 
-    // Food Particle Data
-    this.maxFood = 90;
+    // Food Particle Data (balanced ecological density)
+    this.maxFood = 35;
     this.foodItems = [];
 
     // Plants / Kelp stalks
@@ -203,7 +203,9 @@ export class Environment {
           const leafMesh = new THREE.Mesh(leafGeo, kelpMat);
           leafMesh.position.set(0, 1.1, 0);
           leafMesh.rotation.z = side * 0.3;
+          leafMesh.userData = { isLeaf: true, baseZ: side * 0.3, side };
           segGroup.add(leafMesh);
+          segGroup.userData.leaf = leafMesh;
         }
 
         parentObj.add(segGroup);
@@ -231,8 +233,11 @@ export class Environment {
         nodes,
         height,
         phase: Math.random() * Math.PI * 2,
-        swaySpeed: 0.28 + Math.random() * 0.14,
-        amp: 0.08 + Math.random() * 0.05
+        swaySpeed: 0.35 + Math.random() * 0.15,
+        baseFlex: 0.035 + Math.random() * 0.015,
+        tipFlex: 0.08 + Math.random() * 0.03,
+        currentDeflectX: 0,
+        currentDeflectZ: 0
       });
     }
   }
@@ -325,11 +330,11 @@ export class Environment {
   }
 
   initFoodSystem() {
-    const foodGeo = new THREE.DodecahedronGeometry(0.34, 1);
+    const foodGeo = new THREE.DodecahedronGeometry(0.22, 1);
     this.foodMat = new THREE.MeshStandardMaterial({
-      color: 0x00ff88,
-      emissive: 0x00ff88,
-      emissiveIntensity: 0.55,
+      color: 0x34d399,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.6,
       roughness: 0.25,
       metalness: 0.1
     });
@@ -338,8 +343,8 @@ export class Environment {
     this.foodMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.scene.add(this.foodMesh);
 
-    // Seed initial food items inside the 2.5D tank volume
-    for (let i = 0; i < this.maxFood * 0.65; i++) {
+    // Seed balanced initial plankton inside the 2.5D tank volume
+    for (let i = 0; i < 22; i++) {
       this.spawnFoodRandom();
     }
   }
@@ -354,7 +359,7 @@ export class Environment {
         (Math.random() * 2 - 1) * (b.z - 2.5) // Thin tank depth
       ),
       phase: Math.random() * Math.PI * 2,
-      scale: 0.8 + Math.random() * 0.4,
+      scale: 0.75 + Math.random() * 0.35,
       absorbing: false,
       absorbTarget: null,
       absorbProgress: 0.0,
@@ -362,7 +367,7 @@ export class Environment {
     });
   }
 
-  spawnFoodCluster(center, count = 8) {
+  spawnFoodCluster(center, count = 6) {
     const b = this.bounds;
     for (let i = 0; i < count; i++) {
       if (this.foodItems.length >= this.maxFood) {
@@ -655,7 +660,7 @@ export class Environment {
         pos: new THREE.Vector3(ax, ay, az),
         expansion: 1.0,
         targetExpansion: 1.0,
-        swaySpeed: 1.2 + Math.random() * 0.8,
+        swaySpeed: 0.35 + Math.random() * 0.2,
         palette
       });
     }
@@ -681,14 +686,14 @@ export class Environment {
         }
       }
 
-      // Proximity retraction reflex: retract tightly when creature is within 3.8 units
+      // Proximity retraction reflex: retract gently when creature is within 3.8 units
       if (nearestDist < 3.8) {
         a.targetExpansion = 0.16;
       } else {
         a.targetExpansion = 1.0;
       }
 
-      const lerpSpeed = (a.targetExpansion < a.expansion) ? 7.5 : 1.8;
+      const lerpSpeed = (a.targetExpansion < a.expansion) ? 2.8 : 1.2;
       a.expansion = THREE.MathUtils.lerp(a.expansion, a.targetExpansion, dt * lerpSpeed);
 
       a.crown.scale.set(a.expansion, a.expansion, a.expansion);
@@ -696,8 +701,10 @@ export class Environment {
 
       const swayTime = elapsed * a.swaySpeed;
       a.tentacles.forEach(tent => {
-        const sway = Math.sin(swayTime + tent.swayOffset) * 0.12 * a.expansion;
-        tent.mesh.rotation.z = tent.baseTilt * a.expansion + sway;
+        const swayZ = Math.sin(swayTime + tent.swayOffset) * 0.12 * a.expansion;
+        const swayX = Math.cos(swayTime * 0.8 + tent.swayOffset) * 0.08 * a.expansion;
+        tent.mesh.rotation.z = tent.baseTilt * a.expansion + swayZ;
+        tent.mesh.rotation.x = swayX;
       });
     }
   }
@@ -902,8 +909,8 @@ export class Environment {
     // Hydrodynamic Cavitation Micro-Wake Particles
     this.updateHydrodynamicWakes(dt);
 
-    // 1. Maintain Minimum Food Density
-    if (this.foodItems.length < this.maxFood * 0.45 && Math.random() < 0.25) {
+    // 1. Maintain Balanced Plankton Density (avoids screen clutter)
+    if (this.foodItems.length < 20 && Math.random() < 0.14) {
       this.spawnFoodRandom();
     }
 
@@ -989,9 +996,9 @@ export class Environment {
             const dx = stalkX - c.position.x;
             const dz = stalkZ - c.position.z;
             const distSq = dx * dx + dz * dz;
-            if (distSq < 16.0) {
+            if (distSq < 18.0) {
               const dist = Math.sqrt(distSq) + 0.001;
-              const pushStrength = (1.0 - dist / 4.0) * 0.28;
+              const pushStrength = (1.0 - dist / 4.2) * 0.12;
               deflectX += (dx / dist) * pushStrength;
               deflectZ += (dz / dist) * pushStrength;
             }
@@ -999,12 +1006,37 @@ export class Environment {
         }
       }
 
+      // Smooth organic spring relaxation
+      const targetDeflectX = THREE.MathUtils.clamp(deflectX, -0.07, 0.07);
+      const targetDeflectZ = THREE.MathUtils.clamp(deflectZ, -0.07, 0.07);
+      stalk.currentDeflectX = THREE.MathUtils.lerp(stalk.currentDeflectX || 0, targetDeflectX, dt * 2.4);
+      stalk.currentDeflectZ = THREE.MathUtils.lerp(stalk.currentDeflectZ || 0, targetDeflectZ, dt * 2.4);
+
       stalk.nodes.forEach((node, idx) => {
-        const heightFactor = (idx + 1) / numNodes;
-        const waveZ = Math.sin(swayTime - idx * 0.14) * (stalk.amp * heightFactor) + deflectZ * heightFactor;
-        const waveX = Math.cos(swayTime * 0.65 - idx * 0.1) * (stalk.amp * 0.25 * heightFactor) + deflectX * heightFactor;
+        const heightProgress = (idx + 1) / numNodes; // 0.1 to 1.0
+
+        // Progressive flexibility: base joints are stable (~2°), upper joints flex supplely with current (~4.5°)
+        const jointFlex = THREE.MathUtils.lerp(stalk.baseFlex || 0.035, stalk.tipFlex || 0.075, heightProgress);
+
+        // Fluid traveling S-curve wave (notice the progressive phase offset)
+        const wavePhase = swayTime - idx * 0.35;
+        const waveZ = Math.sin(wavePhase) * jointFlex +
+                      Math.sin(swayTime * 1.8 - idx * 0.5) * (jointFlex * 0.15) +
+                      (stalk.currentDeflectZ * heightProgress);
+
+        const waveX = Math.cos(swayTime * 0.65 - idx * 0.25) * (jointFlex * 0.35) +
+                      (stalk.currentDeflectX * heightProgress);
+
         node.rotation.z = waveZ;
         node.rotation.x = waveX;
+
+        // Leaf blade ripple
+        if (node.userData.leaf) {
+          const leaf = node.userData.leaf;
+          const leafFlutter = Math.sin(swayTime * 1.5 - idx * 0.4) * 0.12;
+          leaf.rotation.z = leaf.userData.baseZ + leafFlutter;
+          leaf.rotation.x = Math.cos(swayTime * 1.1 - idx * 0.3) * 0.08;
+        }
       });
     });
 

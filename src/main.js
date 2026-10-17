@@ -187,10 +187,12 @@ class SimulationApp {
         this.setCameraMode('track');
       } else if (e.key === 'f' || e.key === 'F') {
         const center = this.population.selectedCreature ? this.population.selectedCreature.position : new THREE.Vector3();
-        this.environment.spawnFoodCluster(center, 10);
+        this.environment.spawnFoodCluster(center, 5);
       } else if (e.key === 'b' || e.key === 'B') {
-        const btnBullet = document.getElementById('btn-bullet-time');
-        if (btnBullet) btnBullet.click();
+        this.ui.toggleBulletTime();
+      } else if (e.key === 'h' || e.key === 'H') {
+        const overlay = document.getElementById('ui-overlay');
+        if (overlay) overlay.classList.toggle('zen-mode');
       } else if (e.key === '1') {
         this.setCameraMode('track');
       } else if (e.key === '2') {
@@ -204,7 +206,8 @@ class SimulationApp {
       } else if (e.key === 'c' || e.key === 'C') {
         this.population.cloneSelected(3);
       } else if (e.code === 'Space') {
-        this.ui.isPaused = !this.ui.isPaused;
+        e.preventDefault();
+        this.ui.togglePause();
       }
     });
   }

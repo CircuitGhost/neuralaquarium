@@ -2,6 +2,27 @@ import * as THREE from 'three';
 import { SENSORY_LABELS, HIDDEN_LABELS, MOTOR_LABELS, NUM_SENSORY, NUM_HIDDEN, NUM_MOTOR } from './neural.js';
 import { soundEngine } from './audio.js';
 
+// Concise display labels for canvas nodes (to guarantee zero text overlap)
+const SHORT_SENSORY = [
+  'Antenna L',
+  'Antenna R',
+  'Food Dist',
+  'Food Elev',
+  'Boundary',
+  'Velocity',
+  'Hunger',
+  'Clock'
+];
+
+const SHORT_HIDDEN = ['α', 'β', 'γ', 'δ'];
+
+const SHORT_MOTOR = [
+  'Thrust L',
+  'Thrust R',
+  'Pitch',
+  'Burst'
+];
+
 export class UIManager {
   constructor(populationManager, environment, cameraController) {
     this.pop = populationManager;
@@ -15,7 +36,7 @@ export class UIManager {
     // Connectome Interactive State
     this.hoveredNeuron = null;
     this.hoveredSynapse = null;
-    this.stimulationRipples = []; // { x, y, radius, alpha }
+    this.stimulationRipples = [];
     this.cachedNodes = { sensory: [], hidden: [], motor: [] };
     this.cachedSynapses = [];
 
@@ -27,6 +48,7 @@ export class UIManager {
     this.elDeathCount = document.getElementById('val-deaths');
 
     this.elSpecId = document.getElementById('val-spec-id');
+    this.elSpecSwatch = document.getElementById('specimen-swatch');
     this.elSpecGen = document.getElementById('val-spec-gen');
     this.elSpecEnergy = document.getElementById('val-spec-energy');
     this.elSpecEnergyBar = document.getElementById('bar-spec-energy');
@@ -34,9 +56,22 @@ export class UIManager {
     this.elSpecFood = document.getElementById('val-spec-food');
     this.elSpecSpeed = document.getElementById('val-spec-speed');
 
-    // 2D Connectome Canvas
+    this.elOverlay = document.getElementById('ui-overlay');
+    this.elBrainTooltip = document.getElementById('brain-tooltip');
+    this.btnPlayPause = document.getElementById('btn-play-pause');
+    this.iconPause = document.getElementById('icon-pause');
+    this.iconPlay = document.getElementById('icon-play');
+    this.iconAudioOn = document.getElementById('icon-audio-on');
+    this.iconAudioOff = document.getElementById('icon-audio-off');
+
+    // 2D Connectome Canvas with High-DPI support
     this.brainCanvas = document.getElementById('brain-canvas');
     if (this.brainCanvas) {
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.canvasWidth = 300;
+      this.canvasHeight = 210;
+      this.brainCanvas.width = this.canvasWidth * this.dpr;
+      this.brainCanvas.height = this.canvasHeight * this.dpr;
       this.ctx = this.brainCanvas.getContext('2d');
     }
 
@@ -49,17 +84,18 @@ export class UIManager {
     const speedBtns = document.querySelectorAll('.btn-speed');
     speedBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        speedBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
         const spd = parseFloat(btn.dataset.speed);
         if (spd === 0) {
-          this.isPaused = true;
+          this.togglePause();
         } else {
+          speedBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
           this.isPaused = false;
           this.bulletTime = false;
           this.simSpeed = spd;
           const bBtn = document.getElementById('btn-bullet-time');
           if (bBtn) bBtn.classList.remove('active');
+          this.updatePlayPauseUI();
         }
       });
     });
@@ -79,6 +115,7 @@ export class UIManager {
           const btn1x = document.querySelector('.btn-speed[data-speed="1"]');
           if (btn1x) btn1x.classList.add('active');
         }
+        this.updatePlayPauseUI();
       });
     }
 
@@ -122,7 +159,7 @@ export class UIManager {
       });
     }
 
-    // 6. Champion Teleport Buttons
+    // 6. Champion Quick-jump Buttons
     const btnAlpha = document.getElementById('btn-alpha');
     const btnElder = document.getElementById('btn-elder');
     const btnFast = document.getElementById('btn-fastest');
@@ -167,7 +204,7 @@ export class UIManager {
     if (btnFeed) {
       btnFeed.addEventListener('click', () => {
         const center = this.pop.selectedCreature ? this.pop.selectedCreature.position : new THREE.Vector3();
-        this.env.spawnFoodCluster(center, 12);
+        this.env.spawnFoodCluster(center, 5);
       });
     }
 
@@ -184,9 +221,57 @@ export class UIManager {
     if (btnAudio) {
       btnAudio.addEventListener('click', () => {
         const isMuted = soundEngine.toggleMute();
-        btnAudio.innerText = isMuted ? '🔇 Audio Off' : '🔊 Audio On';
+        if (this.iconAudioOn && this.iconAudioOff) {
+          this.iconAudioOn.style.display = isMuted ? 'none' : 'block';
+          this.iconAudioOff.style.display = isMuted ? 'block' : 'none';
+        }
         btnAudio.classList.toggle('active', !isMuted);
+        const textAudio = document.getElementById('text-audio');
+        if (textAudio) textAudio.innerText = isMuted ? 'Sound' : 'Sound On';
       });
+    }
+
+    // 11. Shortcuts Modal Dialog
+    const btnShortcuts = document.getElementById('btn-shortcuts');
+    const modalShortcuts = document.getElementById('shortcuts-modal');
+    const btnCloseShortcuts = document.getElementById('btn-close-shortcuts');
+    if (btnShortcuts && modalShortcuts) {
+      btnShortcuts.addEventListener('click', () => {
+        modalShortcuts.style.display = 'flex';
+      });
+    }
+    if (btnCloseShortcuts && modalShortcuts) {
+      btnCloseShortcuts.addEventListener('click', () => {
+        modalShortcuts.style.display = 'none';
+      });
+    }
+    if (modalShortcuts) {
+      modalShortcuts.addEventListener('click', (e) => {
+        if (e.target === modalShortcuts) modalShortcuts.style.display = 'none';
+      });
+    }
+
+    // 12. Zen Mode / HUD Toggle
+    const btnZen = document.getElementById('btn-zen');
+    if (btnZen && this.elOverlay) {
+      btnZen.addEventListener('click', () => {
+        this.elOverlay.classList.toggle('zen-mode');
+      });
+    }
+  }
+
+  togglePause() {
+    this.isPaused = !this.isPaused;
+    this.updatePlayPauseUI();
+  }
+
+  updatePlayPauseUI() {
+    if (this.iconPause && this.iconPlay) {
+      this.iconPause.style.display = this.isPaused ? 'none' : 'block';
+      this.iconPlay.style.display = this.isPaused ? 'block' : 'none';
+    }
+    if (this.btnPlayPause) {
+      this.btnPlayPause.classList.toggle('active', this.isPaused);
     }
   }
 
@@ -195,11 +280,9 @@ export class UIManager {
 
     const getCanvasPos = (e) => {
       const rect = this.brainCanvas.getBoundingClientRect();
-      const scaleX = this.brainCanvas.width / rect.width;
-      const scaleY = this.brainCanvas.height / rect.height;
       return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY
+        x: (e.clientX - rect.left) * (this.canvasWidth / rect.width),
+        y: (e.clientY - rect.top) * (this.canvasHeight / rect.height)
       };
     };
 
@@ -214,7 +297,7 @@ export class UIManager {
       ['sensory', 'hidden', 'motor'].forEach(type => {
         this.cachedNodes[type].forEach(n => {
           const dSq = (pos.x - n.x) * (pos.x - n.x) + (pos.y - n.y) * (pos.y - n.y);
-          if (dSq < 144) { // radius 12
+          if (dSq < 144) {
             hitNode = n;
           }
         });
@@ -225,6 +308,12 @@ export class UIManager {
         this.hoveredSynapse = null;
         this.brainCanvas.style.cursor = 'pointer';
         c.highlightNeuron(hitNode.type, hitNode.idx);
+
+        if (this.elBrainTooltip) {
+          const sign = hitNode.val >= 0 ? '+' : '';
+          this.elBrainTooltip.innerText = `${hitNode.fullLabel}: ${sign}${hitNode.val.toFixed(2)}`;
+          this.elBrainTooltip.classList.add('active');
+        }
         return;
       }
 
@@ -237,7 +326,7 @@ export class UIManager {
         } else {
           dist = distToSegment(pos, syn.p1, syn.p2);
         }
-        if (dist < 4.5) {
+        if (dist < 5.0) {
           hitSyn = syn;
           break;
         }
@@ -248,18 +337,28 @@ export class UIManager {
         this.hoveredNeuron = null;
         this.brainCanvas.style.cursor = 'crosshair';
         c.highlightNeuron(null);
-      } else {
-        this.hoveredNeuron = null;
-        this.hoveredSynapse = null;
-        this.brainCanvas.style.cursor = 'default';
-        c.highlightNeuron(null);
+
+        if (this.elBrainTooltip) {
+          const sign = hitSyn.weight > 0 ? '+' : '';
+          const typeStr = hitSyn.weight > 0 ? 'Excitatory' : 'Inhibitory';
+          this.elBrainTooltip.innerText = `${hitSyn.fromLabel} → ${hitSyn.toLabel} [${sign}${hitSyn.weight.toFixed(2)} ${typeStr}]`;
+          this.elBrainTooltip.classList.add('active');
+        }
+        return;
       }
+
+      this.hoveredNeuron = null;
+      this.hoveredSynapse = null;
+      this.brainCanvas.style.cursor = 'default';
+      c.highlightNeuron(null);
+      if (this.elBrainTooltip) this.elBrainTooltip.classList.remove('active');
     });
 
     this.brainCanvas.addEventListener('mouseleave', () => {
       this.hoveredNeuron = null;
       this.hoveredSynapse = null;
       if (this.pop.selectedCreature) this.pop.selectedCreature.highlightNeuron(null);
+      if (this.elBrainTooltip) this.elBrainTooltip.classList.remove('active');
     });
 
     // Mouse Click: Stimulate Neuron or Flip Synapse Polarity
@@ -268,7 +367,6 @@ export class UIManager {
       if (!c) return;
 
       if (this.hoveredNeuron) {
-        // Stimulate Neuron!
         c.stimulateNeuron(this.hoveredNeuron.type, this.hoveredNeuron.idx);
         soundEngine.playStimulate();
         this.stimulationRipples.push({
@@ -278,7 +376,6 @@ export class UIManager {
           alpha: 1.0
         });
       } else if (this.hoveredSynapse) {
-        // Flip Synapse Polarity!
         const syn = this.hoveredSynapse;
         c.connectome.toggleSynapsePolarity(syn.fromType, syn.fromIdx, syn.toType, syn.toIdx);
         c.rebuildSynapticLines();
@@ -305,18 +402,25 @@ export class UIManager {
     const c = this.pop.selectedCreature;
     if (c) {
       if (this.elSpecId) this.elSpecId.innerText = `#${c.id}`;
+      if (this.elSpecSwatch && c.color) {
+        const hex = '#' + c.color.getHexString();
+        this.elSpecSwatch.style.backgroundColor = hex;
+        this.elSpecSwatch.style.boxShadow = `0 0 6px ${hex}`;
+      }
       if (this.elSpecGen) this.elSpecGen.innerText = `Gen ${c.generation}`;
       if (this.elSpecEnergy) this.elSpecEnergy.innerText = `${Math.max(0, Math.round(c.energy))} / 220`;
       if (this.elSpecEnergyBar) {
         const pct = Math.min(100, Math.max(0, (c.energy / 220) * 100));
         this.elSpecEnergyBar.style.width = `${pct}%`;
-        this.elSpecEnergyBar.style.backgroundColor = c.energy < 40 ? '#ff3366' : (c.energy < 100 ? '#ffcc00' : '#00ff88');
+        this.elSpecEnergyBar.style.background = c.energy < 45 ?
+          'linear-gradient(90deg, #ef4444, #f43f5e)' :
+          (c.energy < 100 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #10b981, #34d399)');
       }
       if (this.elSpecAge) this.elSpecAge.innerText = `${c.age.toFixed(1)}s`;
       if (this.elSpecFood) this.elSpecFood.innerText = c.foodEaten;
       if (this.elSpecSpeed) this.elSpecSpeed.innerText = c.speed.toFixed(1);
 
-      // Draw 2D Connectome Architecture & Dynamic Firing
+      // Draw 2D Connectome Architecture
       this.drawConnectome(c);
     }
   }
@@ -324,44 +428,72 @@ export class UIManager {
   drawConnectome(creature) {
     if (!this.ctx || !this.brainCanvas) return;
     const ctx = this.ctx;
-    const w = this.brainCanvas.width;
-    const h = this.brainCanvas.height;
+    const w = this.canvasWidth;
+    const h = this.canvasHeight;
+    const dpr = this.dpr;
 
+    ctx.save();
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
 
     const c = creature.connectome;
     const g = c.genome;
 
-    // Node Layout Coordinates
-    const xSensory = 38;
-    const xHidden = w * 0.5;
-    const xMotor = w - 38;
+    // 3 Distinct Architecture Columns with generous breathing room
+    const xSensory = 22;
+    const xHidden = w * 0.5; // 150
+    const xMotor = w - 22;   // 278
 
+    // 1. Position Sensory Nodes
     const sensoryNodes = [];
     for (let i = 0; i < NUM_SENSORY; i++) {
-      const y = 25 + (i / (NUM_SENSORY - 1)) * (h - 50);
-      sensoryNodes.push({ type: 'sensory', idx: i, x: xSensory, y, val: c.sensoryValues[i], label: SENSORY_LABELS[i] });
+      const y = 20 + (i / (NUM_SENSORY - 1)) * (h - 40);
+      sensoryNodes.push({
+        type: 'sensory',
+        idx: i,
+        x: xSensory,
+        y,
+        val: c.sensoryValues[i],
+        shortLabel: SHORT_SENSORY[i],
+        fullLabel: SENSORY_LABELS[i]
+      });
     }
 
+    // 2. Position Hidden Nodes
     const hiddenNodes = [];
     for (let i = 0; i < NUM_HIDDEN; i++) {
-      const y = 45 + (i / (NUM_HIDDEN - 1)) * (h - 90);
-      hiddenNodes.push({ type: 'hidden', idx: i, x: xHidden, y, val: c.hiddenValues[i], label: HIDDEN_LABELS[i] });
+      const y = 42 + (i / (NUM_HIDDEN - 1)) * (h - 84);
+      hiddenNodes.push({
+        type: 'hidden',
+        idx: i,
+        x: xHidden,
+        y,
+        val: c.hiddenValues[i],
+        shortLabel: SHORT_HIDDEN[i],
+        fullLabel: HIDDEN_LABELS[i]
+      });
     }
 
+    // 3. Position Motor Nodes
     const motorNodes = [];
     for (let i = 0; i < NUM_MOTOR; i++) {
-      const y = 45 + (i / (NUM_MOTOR - 1)) * (h - 90);
-      motorNodes.push({ type: 'motor', idx: i, x: xMotor, y, val: c.motorValues[i], label: MOTOR_LABELS[i] });
+      const y = 42 + (i / (NUM_MOTOR - 1)) * (h - 84);
+      motorNodes.push({
+        type: 'motor',
+        idx: i,
+        x: xMotor,
+        y,
+        val: c.motorValues[i],
+        shortLabel: SHORT_MOTOR[i],
+        fullLabel: MOTOR_LABELS[i]
+      });
     }
 
     this.cachedNodes = { sensory: sensoryNodes, hidden: hiddenNodes, motor: motorNodes };
     this.cachedSynapses = [];
 
-    // 1. Draw Synaptic Connections
-    ctx.lineWidth = 1.0;
-
-    const recordAndDrawSynapse = (p1, p2, weight, fromType, fromIdx, toType, toIdx, isDirect = false, curveOffset = 0) => {
+    // Draw Synapses
+    const recordAndDrawSynapse = (p1, p2, weight, fromType, fromIdx, toType, toIdx, fromLabel, toLabel, isDirect = false, curveOffset = 0) => {
       const threshold = isDirect ? 0.35 : 0.22;
       if (Math.abs(weight) > threshold) {
         const isHovered = this.hoveredSynapse &&
@@ -373,15 +505,15 @@ export class UIManager {
           ctrl = { x: (p1.x + p2.x) * 0.5 + curveOffset, y: (p1.y + p2.y) * 0.5 };
         }
 
-        this.cachedSynapses.push({ p1, p2, ctrl, weight, fromType, fromIdx, toType, toIdx });
+        this.cachedSynapses.push({ p1, p2, ctrl, weight, fromType, fromIdx, toType, toIdx, fromLabel, toLabel });
 
         if (isHovered) {
-          ctx.lineWidth = 3.0;
+          ctx.lineWidth = 2.5;
           ctx.strokeStyle = '#ffffff';
         } else {
-          ctx.lineWidth = 1.0 + Math.min(2.0, Math.abs(weight));
-          const alpha = isDirect ? Math.min(0.35, Math.abs(weight) * 0.3) : Math.min(0.7, Math.abs(weight) * 0.5);
-          ctx.strokeStyle = weight > 0 ? `rgba(0, 229, 255, ${alpha})` : `rgba(255, 51, 102, ${alpha})`;
+          ctx.lineWidth = 0.8 + Math.min(1.8, Math.abs(weight) * 0.8);
+          const alpha = isDirect ? Math.min(0.3, Math.abs(weight) * 0.28) : Math.min(0.65, Math.abs(weight) * 0.45);
+          ctx.strokeStyle = weight > 0 ? `rgba(56, 189, 248, ${alpha})` : `rgba(244, 63, 94, ${alpha})`;
         }
 
         ctx.beginPath();
@@ -395,26 +527,26 @@ export class UIManager {
       }
     };
 
-    // Direct Reflexes (Sensory to Motor - Braitenberg Architecture)
+    // Direct Reflexes (Sensory to Motor)
     for (let mi = 0; mi < NUM_MOTOR; mi++) {
       for (let si = 0; si < NUM_SENSORY; si++) {
-        recordAndDrawSynapse(sensoryNodes[si], motorNodes[mi], g.wDirect[mi][si], 'sensory', si, 'motor', mi, true);
+        recordAndDrawSynapse(sensoryNodes[si], motorNodes[mi], g.wDirect[mi][si], 'sensory', si, 'motor', mi, sensoryNodes[si].fullLabel, motorNodes[mi].fullLabel, true);
       }
     }
 
     // Sensory to Hidden Interneurons
     for (let hi = 0; hi < NUM_HIDDEN; hi++) {
       for (let si = 0; si < NUM_SENSORY; si++) {
-        recordAndDrawSynapse(sensoryNodes[si], hiddenNodes[hi], g.wSensoryHidden[hi][si], 'sensory', si, 'hidden', hi);
+        recordAndDrawSynapse(sensoryNodes[si], hiddenNodes[hi], g.wSensoryHidden[hi][si], 'sensory', si, 'hidden', hi, sensoryNodes[si].fullLabel, hiddenNodes[hi].fullLabel);
       }
     }
 
-    // Recurrent Hidden Feedback Loops (CTRNN Interneurons)
+    // Recurrent Hidden Feedback Loops
     for (let h1 = 0; h1 < NUM_HIDDEN; h1++) {
       for (let h2 = 0; h2 < NUM_HIDDEN; h2++) {
         if (h1 !== h2) {
-          const curveOffset = ((h1 + h2) % 2 === 0) ? -22 : 22;
-          recordAndDrawSynapse(hiddenNodes[h1], hiddenNodes[h2], g.wRecurrent[h2][h1], 'hidden', h1, 'hidden', h2, false, curveOffset);
+          const curveOffset = ((h1 + h2) % 2 === 0) ? -20 : 20;
+          recordAndDrawSynapse(hiddenNodes[h1], hiddenNodes[h2], g.wRecurrent[h2][h1], 'hidden', h1, 'hidden', h2, hiddenNodes[h1].fullLabel, hiddenNodes[h2].fullLabel, false, curveOffset);
         }
       }
     }
@@ -422,11 +554,11 @@ export class UIManager {
     // Hidden to Motor Outputs
     for (let mi = 0; mi < NUM_MOTOR; mi++) {
       for (let hi = 0; hi < NUM_HIDDEN; hi++) {
-        recordAndDrawSynapse(hiddenNodes[hi], motorNodes[mi], g.wHiddenMotor[mi][hi], 'hidden', hi, 'motor', mi);
+        recordAndDrawSynapse(hiddenNodes[hi], motorNodes[mi], g.wHiddenMotor[mi][hi], 'hidden', hi, 'motor', mi, hiddenNodes[hi].fullLabel, motorNodes[mi].fullLabel);
       }
     }
 
-    // 2. Draw Active Action Potential Pulses
+    // Active Action Potential Pulses
     c.activePulses.forEach(p => {
       let from, to;
       if (p.fromType === 'sensory') from = sensoryNodes[p.fromIdx];
@@ -438,7 +570,7 @@ export class UIManager {
       if (from && to) {
         let px, py;
         if (p.fromType === 'hidden' && p.toType === 'hidden' && p.fromIdx !== p.toIdx) {
-          const curveOffset = ((p.fromIdx + p.toIdx) % 2 === 0) ? -22 : 22;
+          const curveOffset = ((p.fromIdx + p.toIdx) % 2 === 0) ? -20 : 20;
           const cx = (from.x + to.x) * 0.5 + curveOffset;
           const cy = (from.y + to.y) * 0.5;
           const t = p.progress;
@@ -452,52 +584,103 @@ export class UIManager {
 
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.arc(px, py, 2.2, 0, Math.PI * 2);
         ctx.fill();
       }
     });
 
-    // 3. Draw Nodes with Dynamic Voltage Glow
-    const drawNode = (n, baseColor, align = 'left') => {
+    // Draw Sensory Nodes (Column 1)
+    sensoryNodes.forEach(n => {
       const isHovered = this.hoveredNeuron && this.hoveredNeuron.type === n.type && this.hoveredNeuron.idx === n.idx;
       const act = Math.min(1.0, Math.abs(n.val));
-      const radius = (isHovered ? 7.0 : 4.5) + act * 4.0;
+      const radius = (isHovered ? 5.5 : 4.0) + act * 2.5;
 
       // Glow halo
-      const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, radius * 2.2);
-      grad.addColorStop(0, isHovered ? '#ffffff' : baseColor);
+      const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, radius * 2.0);
+      grad.addColorStop(0, isHovered ? '#ffffff' : 'rgba(56, 189, 248, 0.8)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, radius * 2.2, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, radius * 2.0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Core Node
-      ctx.fillStyle = isHovered ? '#ffffff' : (act > 0.5 ? '#ffffff' : baseColor);
+      // Core
+      ctx.fillStyle = isHovered ? '#ffffff' : (act > 0.4 ? '#ffffff' : '#38bdf8');
       ctx.beginPath();
       ctx.arc(n.x, n.y, radius * 0.7, 0, Math.PI * 2);
       ctx.fill();
 
-      // Micro Label
-      ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.65)';
-      ctx.font = isHovered ? 'bold 9px monospace' : '8px monospace';
-      ctx.textAlign = align;
-      const xOffset = align === 'left' ? 14 : -14;
-      ctx.fillText(n.label, n.x + xOffset, n.y + 3);
-    };
+      // Label (drawn neatly to the right with ample margin)
+      ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(241, 245, 249, 0.75)';
+      ctx.font = isHovered ? '600 9px Inter, sans-serif' : '500 9px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(n.shortLabel, n.x + 11, n.y + 3);
+    });
 
-    sensoryNodes.forEach((n) => drawNode(n, 'rgba(0, 229, 255, 0.9)', 'left'));
-    hiddenNodes.forEach((n) => drawNode(n, 'rgba(213, 0, 249, 0.9)', 'left'));
-    motorNodes.forEach((n) => drawNode(n, 'rgba(255, 214, 0, 0.9)', 'right'));
+    // Draw Hidden Nodes (Column 2 - Interneurons)
+    hiddenNodes.forEach(n => {
+      const isHovered = this.hoveredNeuron && this.hoveredNeuron.type === n.type && this.hoveredNeuron.idx === n.idx;
+      const act = Math.min(1.0, Math.abs(n.val));
+      const radius = (isHovered ? 7.5 : 6.0) + act * 2.5;
 
-    // 4. Draw Stimulation Shockwave Ripples
+      // Glow halo
+      const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, radius * 2.0);
+      grad.addColorStop(0, isHovered ? '#ffffff' : 'rgba(192, 132, 252, 0.8)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius * 2.0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core node circle
+      ctx.fillStyle = isHovered ? '#ffffff' : (act > 0.4 ? '#ffffff' : '#a855f7');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inside label: short Greek identifier centered cleanly inside circle
+      ctx.fillStyle = (act > 0.4 || isHovered) ? '#0f172a' : '#ffffff';
+      ctx.font = '600 8px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(n.shortLabel, n.x, n.y + 3);
+    });
+
+    // Draw Motor Nodes (Column 3 - Outputs)
+    motorNodes.forEach(n => {
+      const isHovered = this.hoveredNeuron && this.hoveredNeuron.type === n.type && this.hoveredNeuron.idx === n.idx;
+      const act = Math.min(1.0, Math.abs(n.val));
+      const radius = (isHovered ? 5.5 : 4.0) + act * 2.5;
+
+      // Glow halo
+      const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, radius * 2.0);
+      grad.addColorStop(0, isHovered ? '#ffffff' : 'rgba(251, 191, 36, 0.8)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius * 2.0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      ctx.fillStyle = isHovered ? '#ffffff' : (act > 0.4 ? '#ffffff' : '#fbbf24');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Label (drawn neatly to the left with ample margin)
+      ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(241, 245, 249, 0.75)';
+      ctx.font = isHovered ? '600 9px Inter, sans-serif' : '500 9px Inter, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(n.shortLabel, n.x - 11, n.y + 3);
+    });
+
+    // Draw Stimulation Shockwave Ripples
     for (let i = this.stimulationRipples.length - 1; i >= 0; i--) {
       const rip = this.stimulationRipples[i];
       rip.radius += 2.0;
       rip.alpha -= 0.05;
 
       ctx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, rip.alpha)})`;
-      ctx.lineWidth = 2.0;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(rip.x, rip.y, rip.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -506,6 +689,8 @@ export class UIManager {
         this.stimulationRipples.splice(i, 1);
       }
     }
+
+    ctx.restore();
   }
 }
 
