@@ -1,116 +1,113 @@
-# 🌊 SYNAPSE-3D // Evolving Neural Connectome Aquarium
+# Neural Aquarium
 
-[![Three.js](https://img.shields.io/badge/Three.js-r186-black?style=flat-square&logo=three.js)](https://threejs.org/)
-[![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?style=flat-square&logo=vite)](https://vitejs.dev/)
-[![WebGL](https://img.shields.io/badge/WebGL-2.0-990000?style=flat-square&logo=webgl)](https://www.khronos.org/webgl/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+An in-browser artificial life simulation built with Three.js and WebGL. Translucent aquatic organisms swim, hunt drifting plankton, age through distinct life stages, and reproduce with mutation in a contained 2.5D planted aquarium. 
 
-An artificial life simulation in WebGL/Three.js where bioluminescent aquatic organisms navigate a tranquil planted 2.5D aquarium tank, powered by real-time continuous-time recurrent neural networks (CTRNN) visible directly inside each creature's translucent head.
+Each organism is driven by an internal Continuous-Time Recurrent Neural Network (CTRNN) visible inside its body, with real-time action potential pulses traveling along synapses as it navigates.
 
 ---
 
-## ✨ Features & Systems
+## Systems Overview
 
-### 🌿 1. Tranquil Planted 2.5D Aquarium Tank
-* **Procedural Kelp Forest**: Swaying multi-stem ribbon kelp clusters rooted along the sandy substrate with organic wave kinematics.
-* **Stratified Riverbed**: Sandy seabed with scattered smooth stones and soft bottom contact shadows.
-* **Atmospheric Caustics & God Rays**: Soft underwater sunlight ribbons and depth fog tuned for tranquil, natural illumination without harsh glare.
-* **Fluid 2D Navigation**: Click and drag anywhere on the tank to pan smoothly up, down, left, and right; scroll wheel or pinch to zoom from wide tank overviews down to microscopic cell scales.
-
-### 🧠 2. 3D Internal Neural Connectome (CTRNN)
-* **Suspended 3D Brain**: A living neural network visible inside each creature's glassmorphic head pod.
+### 1. Neural Connectome Architecture
+Each creature runs a real-time neural network integrated via Euler steps every frame:
 * **8 Sensory Inputs**:
-  * Dual directional food receptors (left/right phototaxis & chemoreception).
-  * Food proximity & elevation pitch angle.
-  * Tank boundary collision alert sensors.
-  * Internal proprioceptive velocity & hunger state.
-  * Central Pattern Generator (CPG) sinusoidal clock for baseline swim pulses.
-* **4 Recurrent Leaky Hidden Neurons**: Continuous-time recurrent neural network (CTRNN) with dynamic feedback loops and time-constant decay ($\tau$).
-* **4 Motor Outputs**: Left pectoral thrust, right pectoral thrust, pitch elevation, and caudal burst propulsion.
-* **Real-Time Action Potential Visualization**: 
-  * Synapse lines color-coded by excitatory (cyan/gold) or inhibitory (crimson) weights.
-  * Electrical pulses physically travel along axons in real-time as synapses fire.
+  * Left & Right Food Sensors (directional phototaxis / chemoreception)
+  * Food Proximity & Elevation
+  * Wall & Substrate Proximity Alert
+  * Proprioceptive Velocity
+  * Internal Metabolic Energy / Hunger State
+  * Central Pattern Generator (CPG) sinusoidal gait pacemaker
+* **4 Recurrent Leaky Hidden Neurons**: Continuous-time recurrent interneurons with dynamic feedback loops and time-constant decay ($\tau$).
+* **4 Motor Outputs**: Left thrust, right thrust, vertical pitch, and caudal burst propulsion.
+* **Axon Pulse Propagation**: Electrical pulses travel along synapse lines in real-time. Synapses are color-coded by polarity (cyan/excitatory, rose/inhibitory).
 
-### 🧬 3. In-Browser Evolutionary Dynamics
-* Organisms autonomously hunt drifting plankton clusters to maintain energy.
-* High-energy creatures reproduce, passing down mutated synaptic weights, time constants, and morphological traits (color hue, fin scale, antenna length).
-* Low-energy creatures starve and dissolve gracefully into the marine substrate.
-* Adaptive population management preserves alpha genome lineages to prevent extinction bottlenecks.
+### 2. Life Stages & Senescence
+Organisms go through a complete biological lifecycle:
+* **Juvenile Fry (0 – 12s)**: Smaller scale (60% growing to 100%), translucent body, energetic fin flutter, higher metabolic rate, infertile.
+* **Mature Adult (12 – 90s)**: Full adult scale, vibrant bioluminescent markings, capable of genetic reproduction when energy threshold is reached.
+* **Elder (90s+)**: Stately swimming cadence, deeper weathered hue, slightly larger (115%).
+* **Natural Senescence**: Upon reaching maximum lifespan (~135–165s), elders gently sink to the sandy riverbed, dissolving into sparkling nutrient spores that enrich the surrounding substrate anemones and flora.
 
-### 🔬 4. Live Connectome Neurosurgery
-* **Voltage Injection**: Click any neuron node on the 2D HUD to inject artificial electrical potential (+1.8V)—watch sparks propagate through the connectome as the creature twitches its fins or bursts its tail in response.
-* **Synaptic Polarity Inversion**: Click any synapse on the HUD to toggle between **Excitatory** and **Inhibitory** weights, actively rewiring instincts in real-time.
-* **3D Cross-Highlighting**: Hovering nodes on the HUD highlights and scales the corresponding 3D neuron inside the specimen's head.
-* **Specimen Cloning**: One-click **🧬 Clone (x3)** button to spawn exact copies of any champion organism's brain to test its dominance against the school.
+### 3. Hydrodynamics & Convection Currents
+* **Dual-Cell Convection Gyres**: Counter-rotating circulation cells centered around the left and right kelp groves generate slow, continuous underwater currents with central upwelling and perimeter downwelling.
+* **Plankton Drift Lanes**: Nutrient clusters drift along natural gyres, creating dynamic feeding lanes that organisms learn to patrol.
+* **Locomotion Kinematics**: 5-segment undulating spinal column with progressive joint amplitude and dynamic banking roll into turns.
 
-### 🎥 5. Cinematic Cameras & Specimen Tracking
-* **3 Cinematic Perspectives**:
-  * **Follow Specimen (Key `1`)**: Spring-damped tracking locked onto selected swimming organism in the 2D plane.
-  * **Macro Studio (Key `2`)**: Close-up studio view locked onto the creature's firing connectome.
-  * **Free Tank Pan (Key `3` or Canvas Drag)**: Smooth 2D panning and zooming across the entire aquarium environment.
-* **Bullet-Time Mode (Key `B`)**: Eases simulation speed down to 0.22x slow motion for detailed neural and locomotion inspection.
-* **Leaderboard Quick-Jump**:
-  * `Tab` / `Shift+Tab` or `[` / `]`: Cycle through living specimens.
-  * **👑 Alpha**: Jump to the organism with the most food consumed.
-  * **⏳ Elder**: Jump to the oldest surviving specimen.
-  * **⚡ Fastest**: Jump to the highest-velocity swimmer.
-* **Shift + Click Plankton Drop**: Drop fresh nutrient clusters directly into the tank and watch nearby organisms detect and swarm toward them.
+### 4. Persistence & Lineage Snapshot Bank
+* **Auto-Save to LocalStorage**: Periodically saves living population state, generation counters, and champion lineages so your ecosystem persists across browser sessions.
+* **Lineage Snapshot Bank (`L` key)**: Save notable genetic strains with custom designations or spawn from curated presets:
+  * *Emerald Shoaler Lineage*: Agile schooler tuned with rapid fin flutter and high sensory sensitivity.
+  * *Swift Deep Glider*: Streamlined, high-speed gyre cruiser.
+  * *Abyssal Amber Forager*: Patient bottom-grazer with expansive sensory bulbs and efficient energy consumption.
+
+### 5. Interactive HUD & Neurosurgery
+* **2D Connectome Matrix**: Zero-collision 3-column neural diagram displaying real-time node activation voltages and connection weights.
+* **Neurosurgery**: Click any node on the HUD to inject artificial voltage (+1.8V) to trigger physical swimming reflexes, or click any synapse to toggle excitatory/inhibitory polarity in real-time.
+* **Tracking Modes**:
+  * **Track (`1`)**: Smooth spring-damped camera tracking locked onto the selected specimen in the 2D plane.
+  * **Macro (`2`)**: Close-up studio view locked onto the firing connectome.
+  * **Free Pan (`3`)**: Free 2D navigation across the entire tank.
+* **Zen View (`H`)**: Hides all overlays for ambient full-screen observation.
+* **Soundscape**: Procedural audio engine synthesizing oceanic pink noise currents, feeding chimes, and neural discharge clicks via the Web Audio API.
 
 ---
 
-## 🎮 Controls Quick-Reference
+## Controls
 
-| Action | Control |
+| Key / Action | Function |
 |---|---|
-| **Pan Tank** | Click & drag on canvas (left, right, up, down) |
-| **Zoom View** | Mouse scroll wheel / pinch gesture / `+` and `−` HUD buttons |
-| **Inspect Creature** | Click directly on any swimming creature |
-| **Drop Food** | `Shift` + Left Click anywhere in the tank or `F` key |
-| **Camera Modes** | `1` Follow Fish · `2` Macro Studio · `3` Free Pan |
-| **Cycle Organisms** | `Tab` / `Shift+Tab` or `[` / `]` |
-| **Bullet-Time (Slow Mo)** | `B` key |
-| **Neurosurgery / Voltage** | Click any neuron node on the HUD brain inspector |
-| **Synapse Rewiring** | Click any axon connection on the HUD |
-| **Audio Toggle** | `🔇 Audio Off` / `🔊 Audio On` button on HUD |
+| **Left Click + Drag** | 2D pan across the aquarium |
+| **Scroll Wheel / `+` `-`** | Smooth zoom in / out |
+| **Click Creature** | Select and track organism |
+| **`Tab` / `[` `]`** | Cycle previous / next organism |
+| **`1` / `2` / `3`** | Switch Camera (Track / Macro / Free Pan) |
+| **`Space`** | Pause / Resume simulation |
+| **`B`** | Toggle 0.2x Bullet-Time slow motion |
+| **`F` / Shift + Click** | Disperse nutrient plankton cluster |
+| **`C`** | Clone selected organism's genome (3x) |
+| **`L`** | Open Lineage Snapshot Bank |
+| **`H`** | Toggle Zen View (hide/show interface) |
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
-### Prerequisites
-* [Node.js](https://nodejs.org/) (v18 or higher recommended)
-* Modern web browser with WebGL 2.0 support (Chrome, Firefox, Safari, Edge)
+### Requirements
+* [Node.js](https://nodejs.org/) (v18+)
+* Web browser with WebGL support
 
-### Installation & Launch
+### Setup
 
 ```bash
-# 1. Clone the repository
+# Clone repository
 git clone https://github.com/CircuitGhost/neuralaquarium.git
 cd neuralaquarium
 
-# 2. Install dependencies
+# Install dependencies
 npm install
 
-# 3. Launch local Vite development server
+# Start development server
 npm run dev
+```
 
-# 4. Open in browser
-# http://localhost:5173
+Visit `http://localhost:5188` in your browser.
+
+To build for production:
+```bash
+npm run build
 ```
 
 ---
 
-## 🛠️ Architecture & Tech Stack
+## Tech Stack
 
-* **Rendering Engine**: [Three.js](https://threejs.org/) (r186)
-* **Build System**: [Vite](https://vitejs.dev/)
-* **Neural Architecture**: Continuous-Time Recurrent Neural Networks (CTRNN) with Euler numerical integration
-* **Locomotion Kinematics**: 5-segment spine wave propagation with differential pectoral fin aero/hydrodynamic drag
-* **Shading & Post-Processing**: Custom Three.js `MeshPhysicalMaterial` transmission with ACES Filmic tone mapping and selective bloom
-* **Audio Synthesis**: Pure Web Audio API procedural sound generation
+* **Renderer**: Three.js (WebGL)
+* **Bundler**: Vite
+* **Audio**: Procedural Web Audio API (white/pink noise filters, bi-quad resonant chimes)
+* **Typography**: Inter & JetBrains Mono
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.

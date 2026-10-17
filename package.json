@@ -1,8 +1,8 @@
 {
-  "name": "threejs",
+  "name": "neuralaquarium",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Artificial life simulation of bioluminescent organisms powered by continuous-time recurrent neural networks.",
+  "main": "src/main.js",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5188 --strictPort",
