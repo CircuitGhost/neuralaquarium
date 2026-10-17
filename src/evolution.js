@@ -47,9 +47,11 @@ export class PopulationManager {
 
   spawnCreature(genome = null, gen = 1) {
     const b = this.environment.bounds;
+    const floorLimit = -b.y + 5.5;
+    const ceilingLimit = b.y - 2.5;
     const pos = new THREE.Vector3(
       (Math.random() * 2 - 1) * (b.x - 8),
-      (Math.random() * 2 - 1) * (b.y - 6),
+      floorLimit + 2.0 + Math.random() * (ceilingLimit - floorLimit - 4.0),
       (Math.random() * 2 - 1) * Math.max(1, b.z - 3)
     );
 
@@ -190,9 +192,12 @@ export class PopulationManager {
     const parentPos = this.selectedCreature.position;
 
     for (let i = 0; i < count; i++) {
+      const b = this.environment.bounds;
       const offsetPos = parentPos.clone().add(
         new THREE.Vector3((Math.random() - 0.5) * 4.0, (Math.random() - 0.5) * 3.0, (Math.random() - 0.5) * 4.0)
       );
+      offsetPos.y = THREE.MathUtils.clamp(offsetPos.y, -b.y + 4.0, b.y - 3.0);
+      offsetPos.x = THREE.MathUtils.clamp(offsetPos.x, -b.x + 3.0, b.x - 3.0);
       const clone = new Creature(offsetPos, genome, this.selectedCreature.generation);
       this.creatures.push(clone);
       this.scene.add(clone.mesh);
@@ -486,9 +491,11 @@ export class PopulationManager {
 
     for (let i = 0; i < count; i++) {
       const b = this.environment.bounds;
+      const floorLimit = -b.y + 5.5;
+      const ceilingLimit = b.y - 2.5;
       const pos = new THREE.Vector3(
         (Math.random() * 2 - 1) * (b.x - 8),
-        (Math.random() * 2 - 1) * (b.y - 6),
+        floorLimit + 2.0 + Math.random() * (ceilingLimit - floorLimit - 4.0),
         (Math.random() * 2 - 1) * Math.max(1, b.z - 3)
       );
 

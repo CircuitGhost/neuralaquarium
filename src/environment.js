@@ -51,17 +51,17 @@ export class Environment {
   initTankGeometry() {
     const b = this.bounds;
 
-    // 1. Back Wall Backdrop with Deep Aquatic Gradient (Generously fills viewing frustum)
-    const backGeo = new THREE.PlaneGeometry(b.x * 2 + 60, b.y * 2 + 40);
+    // 1. Water Volume Backdrop (strictly bounded to the aquarium interior: [-b.x, b.x] x [-b.y, b.y])
+    const backGeo = new THREE.PlaneGeometry(b.x * 2, b.y * 2);
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#0369a1');    // Surface ocean cerulean
-    grad.addColorStop(0.25, '#075985'); // Midwater deep blue
-    grad.addColorStop(0.65, '#082f49'); // Abyssal navy
-    grad.addColorStop(1.0, '#021226');  // Deep trench midnight
+    grad.addColorStop(0, '#0284c7');    // Surface ocean cerulean
+    grad.addColorStop(0.25, '#0369a1'); // Midwater deep blue
+    grad.addColorStop(0.65, '#075985'); // Abyssal navy
+    grad.addColorStop(1.0, '#04223d');  // Substrate trench navy
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
@@ -69,63 +69,116 @@ export class Environment {
     backTex.needsUpdate = true;
     const backMat = new THREE.MeshBasicMaterial({ map: backTex, depthWrite: false });
     this.backdrop = new THREE.Mesh(backGeo, backMat);
-    this.backdrop.position.set(0, 0, -b.z - 2.5);
+    this.backdrop.position.set(0, 0, -b.z + 0.05);
     this.scene.add(this.backdrop);
 
-    // 2. Tank Frame & Edge Outlines
-    const boxGeo = new THREE.BoxGeometry(b.x * 2, b.y * 2, b.z * 2);
-    const edges = new THREE.EdgesGeometry(boxGeo);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x0284c7,
+    // 2. High-Clarity Front Viewing Glass with Gentle Anti-Reflective Tint
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x93c5fd,
+      transmission: 0.96,
+      opacity: 0.12,
       transparent: true,
-      opacity: 0.22,
+      roughness: 0.08,
+      metalness: 0.05,
+      ior: 1.33,
+      thickness: 0.5,
+      depthWrite: false
+    });
+
+    const frontGlassGeo = new THREE.PlaneGeometry(b.x * 2, b.y * 2);
+    const frontGlass = new THREE.Mesh(frontGlassGeo, glassMat);
+    frontGlass.position.set(0, 0, b.z);
+    this.scene.add(frontGlass);
+
+    // 3. Crisp Aquarium Frame Trim (Clean 2D front facade border framing the tank)
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x07111e,
+      roughness: 0.4,
+      metalness: 0.8
+    });
+
+    const borderThickness = 1.0;
+    // Top border beam
+    const topBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.2);
+    const topBar = new THREE.Mesh(topBarGeo, frameMat);
+    topBar.position.set(0, b.y + borderThickness * 0.5, b.z + 0.1);
+    this.scene.add(topBar);
+
+    // Bottom border beam
+    const bottomBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.2);
+    const bottomBar = new THREE.Mesh(bottomBarGeo, frameMat);
+    bottomBar.position.set(0, -b.y - borderThickness * 0.5, b.z + 0.1);
+    this.scene.add(bottomBar);
+
+    // Left border column
+    const colGeo = new THREE.BoxGeometry(borderThickness, b.y * 2, 1.2);
+    const leftCol = new THREE.Mesh(colGeo, frameMat);
+    leftCol.position.set(-b.x - borderThickness * 0.5, 0, b.z + 0.1);
+    this.scene.add(leftCol);
+
+    // Right border column
+    const rightCol = new THREE.Mesh(colGeo, frameMat);
+    rightCol.position.set(b.x + borderThickness * 0.5, 0, b.z + 0.1);
+    this.scene.add(rightCol);
+
+    // 4. Subtle Shimmering Water Surface Line (at the top interior)
+    const surfGeo = new THREE.PlaneGeometry(b.x * 2, 0.4);
+    this.surfMat = new THREE.MeshBasicMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.45,
       blending: THREE.AdditiveBlending
     });
-    this.boundaryBox = new THREE.LineSegments(edges, lineMat);
-    this.scene.add(this.boundaryBox);
-
-    // 3. Water Surface Meniscus (Shimmering Top Plane)
-    const surfGeo = new THREE.PlaneGeometry(b.x * 2, b.z * 2);
-    this.surfMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.12,
-      blending: THREE.NormalBlending,
-      side: THREE.DoubleSide
-    });
-    const surface = new THREE.Mesh(surfGeo, this.surfMat);
-    surface.position.set(0, b.y, 0);
-    surface.rotation.x = Math.PI * 0.5;
-    this.scene.add(surface);
+    const surfLine = new THREE.Mesh(surfGeo, this.surfMat);
+    surfLine.position.set(0, b.y - 0.2, b.z - 0.1);
+    this.scene.add(surfLine);
   }
 
   initSubstrateAndRocks() {
     const b = this.bounds;
 
-    // Sandy Sea Floor Substrate
-    const floorGeo = new THREE.BoxGeometry(b.x * 2 + 8, 4.0, b.z * 2 + 6, 32, 1, 8);
-    // Displace floor vertices for organic sandy dunes
+    // 1. Sandy Sea Floor Dune Bed (strictly inside the bottom of the tank: top at ~ -b.y + 1.6)
+    const floorGeo = new THREE.BoxGeometry(b.x * 2 - 0.4, 2.6, b.z * 2 - 0.4, 32, 1, 8);
+    // Displace upper floor vertices for organic sandy ripples
     const pos = floorGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       if (pos.getY(i) > 0) {
         const x = pos.getX(i);
         const z = pos.getZ(i);
-        const dune = Math.sin(x * 0.12) * 0.8 + Math.cos(z * 0.3) * 0.4;
+        const dune = Math.sin(x * 0.14) * 0.55 + Math.cos(z * 0.35) * 0.25;
         pos.setY(i, pos.getY(i) + dune);
       }
     }
     floorGeo.computeVertexNormals();
 
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x051b2c,
-      roughness: 0.88,
+      color: 0x061e33,
+      roughness: 0.85,
       metalness: 0.05
     });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.position.set(0, -b.y - 1.5, 0);
+    floorMesh.position.set(0, -b.y + 1.3, 0);
     this.scene.add(floorMesh);
 
-    // Decorative Sea Rocks & Pebbles along substrate
+    // 2. Heavy Architectural Aquarium Base Stand (positioned strictly below the tank: y <= -b.y)
+    const standMat = new THREE.MeshStandardMaterial({
+      color: 0x050b14,
+      roughness: 0.45,
+      metalness: 0.8
+    });
+    const standGeo = new THREE.BoxGeometry(b.x * 2 + 2.0, 7.0, b.z * 2 + 2.0);
+    const standMesh = new THREE.Mesh(standGeo, standMat);
+    standMesh.position.set(0, -b.y - 3.5, 0);
+    this.scene.add(standMesh);
+
+    // Substrate Base Trim Line (sleek illuminated accent gap between glass and stand)
+    const trimGeo = new THREE.BoxGeometry(b.x * 2 + 0.6, 0.4, b.z * 2 + 0.6);
+    const trimMat = new THREE.MeshBasicMaterial({ color: 0x0284c7, transparent: true, opacity: 0.4 });
+    const trimMesh = new THREE.Mesh(trimGeo, trimMat);
+    trimMesh.position.set(0, -b.y, 0);
+    this.scene.add(trimMesh);
+
+    // 3. Decorative Sea Rocks & Pebbles nestled in sand
     const rockMat = new THREE.MeshStandardMaterial({
       color: 0x031422,
       roughness: 0.8,
@@ -133,20 +186,20 @@ export class Environment {
     });
 
     const rockGeos = [
-      new THREE.DodecahedronGeometry(2.5, 1),
-      new THREE.DodecahedronGeometry(1.8, 1),
-      new THREE.DodecahedronGeometry(3.2, 1)
+      new THREE.DodecahedronGeometry(2.2, 1),
+      new THREE.DodecahedronGeometry(1.6, 1),
+      new THREE.DodecahedronGeometry(2.8, 1)
     ];
 
-    // Seed 14 rocks across floor
+    // Seed rocks strictly within substrate dunes
     for (let i = 0; i < 14; i++) {
       const geo = rockGeos[i % rockGeos.length];
       const rock = new THREE.Mesh(geo, rockMat);
       const rx = (Math.random() * 2 - 1) * (b.x - 6);
       const rz = (Math.random() * 2 - 1) * (b.z - 2);
-      const scaleY = 0.5 + Math.random() * 0.6;
-      rock.scale.set(1.0 + Math.random() * 0.5, scaleY, 1.0 + Math.random() * 0.5);
-      rock.position.set(rx, -b.y + 0.5, rz);
+      const scaleY = 0.45 + Math.random() * 0.45;
+      rock.scale.set(1.0 + Math.random() * 0.4, scaleY, 1.0 + Math.random() * 0.4);
+      rock.position.set(rx, -b.y + 2.1, rz);
       rock.rotation.set(Math.random(), Math.random(), Math.random());
       this.scene.add(rock);
     }
@@ -163,8 +216,9 @@ export class Environment {
       const height = 18.0 + Math.random() * 26.0; // Stalk height
       const segments = Math.floor(height / 2.2);
 
+      const dune = Math.sin(x * 0.14) * 0.55 + Math.cos(z * 0.35) * 0.25;
       const stalkGroup = new THREE.Group();
-      stalkGroup.position.set(x, -b.y, z);
+      stalkGroup.position.set(x, -b.y + 1.8 + dune, z);
 
       // Create linked segmented stalk nodes
       const nodes = [];
@@ -530,7 +584,7 @@ export class Environment {
     this.causticTex.wrapT = THREE.RepeatWrapping;
     this.causticTex.repeat.set(4, 2);
 
-    const causticGeo = new THREE.PlaneGeometry(b.x * 2 + 12, b.z * 2 + 8, 16, 16);
+    const causticGeo = new THREE.PlaneGeometry(b.x * 2 - 1.0, b.z * 2 - 1.0, 16, 16);
     this.causticMat = new THREE.MeshBasicMaterial({
       map: this.causticTex,
       transparent: true,
@@ -542,7 +596,7 @@ export class Environment {
 
     this.causticPlane = new THREE.Mesh(causticGeo, this.causticMat);
     this.causticPlane.rotation.x = -Math.PI * 0.5;
-    this.causticPlane.position.set(0, -b.y + 0.35, 0);
+    this.causticPlane.position.set(0, -b.y + 2.2, 0);
     this.scene.add(this.causticPlane);
     this.lastCausticUpdate = 0;
   }
@@ -628,8 +682,8 @@ export class Environment {
     for (let i = 0; i < this.maxShadows; i++) {
       if (i < creatures.length && !creatures[i].isDead) {
         const c = creatures[i];
-        const dune = Math.sin(c.position.x * 0.12) * 0.8 + Math.cos(c.position.z * 0.3) * 0.4;
-        const floorY = -b.y + 0.35 + dune;
+        const dune = Math.sin(c.position.x * 0.14) * 0.55 + Math.cos(c.position.z * 0.35) * 0.25;
+        const floorY = -b.y + 1.8 + dune;
         const heightAboveFloor = Math.max(0.1, c.position.y - floorY);
 
         const scaleSpread = 0.8 + Math.min(heightAboveFloor * 0.07, 1.8);
@@ -672,8 +726,8 @@ export class Environment {
       const palette = anemoneColors[i % anemoneColors.length];
       const ax = (Math.random() * 2 - 1) * (b.x - 6);
       const az = (Math.random() * 2 - 1) * (b.z - 1.5);
-      const dune = Math.sin(ax * 0.12) * 0.8 + Math.cos(az * 0.3) * 0.4;
-      const ay = -b.y + 0.3 + dune;
+      const dune = Math.sin(ax * 0.14) * 0.55 + Math.cos(az * 0.35) * 0.25;
+      const ay = -b.y + 1.8 + dune;
 
       const singleGroup = new THREE.Group();
       singleGroup.position.set(ax, ay, az);

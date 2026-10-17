@@ -24,8 +24,8 @@ class SimulationApp {
 
     // 1. Scene, Camera, Renderer
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x010814); // Deep abyssal navy
-    this.scene.fog = new THREE.FogExp2(0x010814, 0.0035);
+    this.scene.background = new THREE.Color(0x000000); // Pure black void outside the aquarium tank
+    // No global fog so area outside the aquarium remains pitch black
 
     this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 400);
     this.camera.position.set(0, 0, 68);
@@ -268,11 +268,11 @@ class SimulationApp {
       // 'free' mode: camera does not translate toward fish, user pans around freely!
     }
 
-    // Soft pan boundary limits so user stays framed inside the aquarium
-    const maxPanX = this.environment.bounds.x + 8;
-    const maxPanY = this.environment.bounds.y + 6;
+    // Pan boundary limits framed to the aquarium with clean black surrounding void
+    const maxPanX = this.environment.bounds.x - 2.0;
+    const maxPanY = this.environment.bounds.y - 2.0;
     this.controls.target.x = THREE.MathUtils.clamp(this.controls.target.x, -maxPanX, maxPanX);
-    this.controls.target.y = THREE.MathUtils.clamp(this.controls.target.y, -maxPanY, maxPanY);
+    this.controls.target.y = THREE.MathUtils.clamp(this.controls.target.y, -maxPanY + 2.0, maxPanY);
 
     // Safety fallback: ensure camera and controls target are always valid
     if (!Number.isFinite(this.camera.position.x) || !Number.isFinite(this.controls.target.x)) {

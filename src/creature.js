@@ -40,6 +40,10 @@ export class Creature {
 
     // Kinematics & Spatial Orientation
     this.position = position ? position.clone() : new THREE.Vector3();
+    // Prevent ever starting inside the rocks or floor substrate (bottom boundary is at -28 + 5.5 = -22.5)
+    if (this.position.y < -22.5) {
+      this.position.y = -22.5 + Math.random() * 4.0;
+    }
     this.velocity = new THREE.Vector3();
     this.quaternion = new THREE.Quaternion();
     this.speed = 0.0;
@@ -422,8 +426,8 @@ export class Creature {
         // Gentle descent toward sandy dune floor
         const b = environment ? environment.bounds : null;
         if (b) {
-          const dune = Math.sin(this.position.x * 0.12) * 0.8 + Math.cos(this.position.z * 0.3) * 0.4;
-          const targetFloorY = -b.y + 0.6 + dune;
+          const dune = Math.sin(this.position.x * 0.14) * 0.55 + Math.cos(this.position.z * 0.35) * 0.25;
+          const targetFloorY = -b.y + 2.0 + dune;
           if (this.position.y > targetFloorY) {
             this.position.y -= dt * 1.35;
           }
@@ -460,10 +464,18 @@ export class Creature {
           this._hasEnrichedFlora = true;
           environment.enrichFloraNear(this.position, 12.0);
         }
+        // Fade out head and body opacity progressively
+        if (this.headMat) {
+          this.headMat.opacity = Math.max(0, 0.85 * (1.0 - this.dissolveProgress));
+          this.headMat.emissiveIntensity = Math.max(0, 0.25 * (1.0 - this.dissolveProgress));
+        }
       } else {
         // Starvation death: quicker fade and contraction
         this.fadeAlpha = Math.max(0, this.fadeAlpha - dt * 1.5);
         this.mesh.scale.multiplyScalar(0.97);
+        if (this.headMat) {
+          this.headMat.opacity = Math.max(0, 0.85 * this.fadeAlpha);
+        }
       }
       return;
     }
@@ -571,31 +583,57 @@ export class Creature {
     // 2.5D Tank Boundary Repulsion & Active Heading Steering
     const bounds = environment.bounds;
     _scratchVec3C.set(0, 0, 0);
+
+    // Left & Right Glass Boundaries
     if (Math.abs(this.position.x) > bounds.x - 3.5) {
-      _scratchVec3C.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - (bounds.x - 3.5)) * 8.0;
+      _scratchVec3C.x = -Math.sign(this.position.x) * (Math.abs(this.position.x) - (bounds.x - 3.5)) * 16.0;
     }
-    if (Math.abs(this.position.y) > bounds.y - 3.5) {
-      _scratchVec3C.y = -Math.sign(this.position.y) * (Math.abs(this.position.y) - (bounds.y - 3.5)) * 8.0;
+
+    // Top Water Surface & Bottom Substrate/Rocks Boundaries
+    // Floor limit set at -bounds.y + 5.5 to keep fish comfortably above the rocks
+    const floorLimit = -bounds.y + 5.5;
+    const ceilingLimit = bounds.y - 2.5;
+
+    if (this.position.y < floorLimit + 2.0) {
+      _scratchVec3C.y = Math.max(0.5, (floorLimit + 2.0 - this.position.y)) * 20.0;
+    } else if (this.position.y > ceilingLimit - 1.0) {
+      _scratchVec3C.y = -Math.max(0.5, (this.position.y - (ceilingLimit - 1.0))) * 16.0;
     }
-    // Stronger Z containment so they stay within the cross-section
-    if (Math.abs(this.position.z) > bounds.z - 1.5) {
-      _scratchVec3C.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - (bounds.z - 1.5)) * 12.0;
+
+    // Strong Z containment to keep fish strictly inside the glass tank cross-section
+    if (Math.abs(this.position.z) > bounds.z - 1.2) {
+      _scratchVec3C.z = -Math.sign(this.position.z) * (Math.abs(this.position.z) - (bounds.z - 1.2)) * 18.0;
     }
     // Continuous gentle spring toward Z = 0
-    _scratchVec3C.z -= this.position.z * 2.0;
+    _scratchVec3C.z -= this.position.z * 2.5;
 
-    // Smoothly turn headingAngle away from walls so creatures don't get trapped against tank boundaries
-    if (Math.abs(_scratchVec3C.x) > 0.1 || Math.abs(_scratchVec3C.y) > 0.1) {
+    // Corner Escape Mechanism: if jammed near boundaries, redirect heading smoothly inward
+    const repulsionMagSq = _scratchVec3C.x * _scratchVec3C.x + _scratchVec3C.y * _scratchVec3C.y;
+    if (repulsionMagSq > 0.01) {
       const awayAngle = Math.atan2(_scratchVec3C.y, _scratchVec3C.x);
       const diff = Math.atan2(Math.sin(awayAngle - this.headingAngle), Math.cos(awayAngle - this.headingAngle));
-      this.headingAngle += diff * Math.min(1.0, dt * 4.5);
+      this.headingAngle += diff * Math.min(1.0, dt * 7.0);
     }
 
+    // Velocity combines motor thrust heading and boundary deflection
     this.velocity.copy(this.heading).multiplyScalar(this.speed);
     this.velocity.addScaledVector(_scratchVec3C, dt);
 
+    // If pushing hard into a wall or corner, orient heading along the deflected velocity vector so fish turns around!
+    if (repulsionMagSq > 1.0 && this.velocity.lengthSq() > 0.1) {
+      const targetHeadingAngle = Math.atan2(this.velocity.y, this.velocity.x);
+      const hDiff = Math.atan2(Math.sin(targetHeadingAngle - this.headingAngle), Math.cos(targetHeadingAngle - this.headingAngle));
+      this.headingAngle += hDiff * Math.min(1.0, dt * 6.0);
+    }
+
     this.position.addScaledVector(this.velocity, dt);
-    if (!Number.isFinite(this.position.x) || !Number.isFinite(this.position.y)) {
+
+    // Absolute Physical Clamping (guarantees fish can NEVER penetrate glass or go below rocks)
+    this.position.x = THREE.MathUtils.clamp(this.position.x, -bounds.x + 1.2, bounds.x - 1.2);
+    this.position.y = THREE.MathUtils.clamp(this.position.y, floorLimit, ceilingLimit + 0.5);
+    this.position.z = THREE.MathUtils.clamp(this.position.z, -bounds.z + 0.8, bounds.z - 0.8);
+
+    if (!Number.isFinite(this.position.x) || !Number.isFinite(this.position.y) || !Number.isFinite(this.position.z)) {
       this.position.set(0, 0, 0);
     }
     this.mesh.position.copy(this.position);
@@ -666,12 +704,15 @@ export class Creature {
       this.bulbMatR.color.setRGB(0, 0.5 + inputs[1] * 0.5, 1.0);
     }
 
-    // S4: Wall / Boundary Proximity Alert
+    // S4: Wall / Floor / Boundary Proximity Alert
     const b = environment.bounds;
+    const floorLimit = -b.y + 5.5;
+    const floorProx = this.position.y < (floorLimit + 3.5) ? (floorLimit + 3.5 - this.position.y) / 3.5 : 0.0;
     const wallProx = Math.max(
       Math.abs(this.position.x) / b.x,
       Math.abs(this.position.y) / b.y,
-      Math.abs(this.position.z) / b.z
+      Math.abs(this.position.z) / b.z,
+      floorProx
     );
     inputs[4] = Math.max(0, (wallProx - 0.7) / 0.3);
 
