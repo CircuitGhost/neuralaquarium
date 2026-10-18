@@ -318,7 +318,7 @@ window.addEventListener('unhandledrejection', (e) => {
 function bootSimulator() {
   try {
     console.log('Booting Synapse-3D Aquarium...');
-    new SimulationApp();
+    window.app = new SimulationApp();
     console.log('Synapse-3D Aquarium running successfully!');
   } catch (err) {
     console.error('CRITICAL BOOT ERROR:', err);

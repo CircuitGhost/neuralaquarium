@@ -47,12 +47,12 @@ export class PopulationManager {
 
   spawnCreature(genome = null, gen = 1) {
     const b = this.environment.bounds;
-    const floorLimit = -b.y + 5.5;
-    const ceilingLimit = b.y - 2.5;
+    const floorLimit = -b.y + 6.5;
+    const ceilingLimit = b.y - 4.5;
     const pos = new THREE.Vector3(
-      (Math.random() * 2 - 1) * (b.x - 8),
+      (Math.random() * 2 - 1) * (b.x - 9.0),
       floorLimit + 2.0 + Math.random() * (ceilingLimit - floorLimit - 4.0),
-      (Math.random() * 2 - 1) * Math.max(1, b.z - 3)
+      (Math.random() * 2 - 1) * Math.max(1, b.z - 3.0)
     );
 
     const c = new Creature(pos, genome, gen);

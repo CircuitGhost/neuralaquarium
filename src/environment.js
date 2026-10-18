@@ -51,8 +51,9 @@ export class Environment {
   initTankGeometry() {
     const b = this.bounds;
 
-    // 1. Water Volume Backdrop (strictly bounded to the aquarium interior: [-b.x, b.x] x [-b.y, b.y])
-    const backGeo = new THREE.PlaneGeometry(b.x * 2, b.y * 2);
+    // 1. Water Volume Backdrop (perspective-scaled to completely cover the viewing frustum behind the frame)
+    const frustumScale = (68 - (-b.z)) / (68 - b.z); // ~75 / 61 = 1.23
+    const backGeo = new THREE.PlaneGeometry(b.x * 2 * (frustumScale + 0.08), b.y * 2 * (frustumScale + 0.08));
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
@@ -67,7 +68,11 @@ export class Environment {
 
     const backTex = new THREE.CanvasTexture(canvas);
     backTex.needsUpdate = true;
-    const backMat = new THREE.MeshBasicMaterial({ map: backTex, depthWrite: false });
+    const backMat = new THREE.MeshBasicMaterial({
+      map: backTex,
+      depthWrite: false
+    });
+
     this.backdrop = new THREE.Mesh(backGeo, backMat);
     this.backdrop.position.set(0, 0, -b.z + 0.05);
     this.scene.add(this.backdrop);
@@ -90,28 +95,28 @@ export class Environment {
     frontGlass.position.set(0, 0, b.z);
     this.scene.add(frontGlass);
 
-    // 3. Crisp Aquarium Frame Trim (Clean 2D front facade border framing the tank)
+    // 3. Crisp Aquarium Frame Trim (Clean front facade border framing the tank)
     const frameMat = new THREE.MeshStandardMaterial({
       color: 0x07111e,
       roughness: 0.4,
       metalness: 0.8
     });
 
-    const borderThickness = 1.0;
+    const borderThickness = 1.2;
     // Top border beam
-    const topBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.2);
+    const topBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.4);
     const topBar = new THREE.Mesh(topBarGeo, frameMat);
     topBar.position.set(0, b.y + borderThickness * 0.5, b.z + 0.1);
     this.scene.add(topBar);
 
     // Bottom border beam
-    const bottomBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.2);
+    const bottomBarGeo = new THREE.BoxGeometry(b.x * 2 + borderThickness * 2, borderThickness, 1.4);
     const bottomBar = new THREE.Mesh(bottomBarGeo, frameMat);
     bottomBar.position.set(0, -b.y - borderThickness * 0.5, b.z + 0.1);
     this.scene.add(bottomBar);
 
     // Left border column
-    const colGeo = new THREE.BoxGeometry(borderThickness, b.y * 2, 1.2);
+    const colGeo = new THREE.BoxGeometry(borderThickness, b.y * 2, 1.4);
     const leftCol = new THREE.Mesh(colGeo, frameMat);
     leftCol.position.set(-b.x - borderThickness * 0.5, 0, b.z + 0.1);
     this.scene.add(leftCol);
@@ -121,16 +126,44 @@ export class Environment {
     rightCol.position.set(b.x + borderThickness * 0.5, 0, b.z + 0.1);
     this.scene.add(rightCol);
 
-    // 4. Subtle Shimmering Water Surface Line (at the top interior)
-    const surfGeo = new THREE.PlaneGeometry(b.x * 2, 0.4);
+    // 4. Outer Pitch-Black Masking Panels (Guarantees 100% pure black void outside the aquarium)
+    const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: true });
+    const maskZ = b.z + 0.25;
+    const maskSpan = 350;
+
+    // Top mask (covers everything above the top frame)
+    const topMaskGeo = new THREE.PlaneGeometry(maskSpan, maskSpan);
+    const topMask = new THREE.Mesh(topMaskGeo, maskMat);
+    topMask.position.set(0, b.y + borderThickness + maskSpan * 0.5, maskZ);
+    this.scene.add(topMask);
+
+    // Bottom mask (covers everything below the aquarium stand)
+    const botMaskGeo = new THREE.PlaneGeometry(maskSpan, maskSpan);
+    const botMask = new THREE.Mesh(botMaskGeo, maskMat);
+    botMask.position.set(0, -b.y - 7.5 - maskSpan * 0.5, maskZ);
+    this.scene.add(botMask);
+
+    // Left mask (covers everything to the left of the aquarium)
+    const sideMaskGeo = new THREE.PlaneGeometry(maskSpan, maskSpan);
+    const leftMask = new THREE.Mesh(sideMaskGeo, maskMat);
+    leftMask.position.set(-b.x - borderThickness - maskSpan * 0.5, 0, maskZ);
+    this.scene.add(leftMask);
+
+    // Right mask (covers everything to the right of the aquarium)
+    const rightMask = new THREE.Mesh(sideMaskGeo, maskMat);
+    rightMask.position.set(b.x + borderThickness + maskSpan * 0.5, 0, maskZ);
+    this.scene.add(rightMask);
+
+    // 5. Subtle Shimmering Water Surface Line (at the top interior)
+    const surfGeo = new THREE.PlaneGeometry(b.x * 2 - 0.4, 0.45);
     this.surfMat = new THREE.MeshBasicMaterial({
       color: 0x7dd3fc,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.5,
       blending: THREE.AdditiveBlending
     });
     const surfLine = new THREE.Mesh(surfGeo, this.surfMat);
-    surfLine.position.set(0, b.y - 0.2, b.z - 0.1);
+    surfLine.position.set(0, b.y - 0.25, b.z - 0.1);
     this.scene.add(surfLine);
   }
 
@@ -328,9 +361,9 @@ export class Environment {
     const speeds = new Float32Array(this.snowCount);
 
     for (let i = 0; i < this.snowCount; i++) {
-      positions[i * 3 + 0] = (Math.random() * 2 - 1) * b.x;
-      positions[i * 3 + 1] = (Math.random() * 2 - 1) * b.y;
-      positions[i * 3 + 2] = (Math.random() * 2 - 1) * b.z;
+      positions[i * 3 + 0] = (Math.random() * 2 - 1) * (b.x - 4.0);
+      positions[i * 3 + 1] = THREE.MathUtils.lerp(-b.y + 6.0, b.y - 3.5, Math.random());
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * (b.z - 2.0);
       speeds[i] = 0.2 + Math.random() * 0.4;
     }
 
@@ -406,11 +439,16 @@ export class Environment {
   spawnFoodRandom() {
     if (this.foodItems.length >= this.maxFood) return;
     const b = this.bounds;
+    const maxFoodX = b.x - 6.0;
+    const minFoodY = -b.y + 7.0;
+    const maxFoodY = b.y - 5.0;
+    const maxFoodZ = b.z - 2.5;
+
     this.foodItems.push({
       position: new THREE.Vector3(
-        (Math.random() * 2 - 1) * (b.x - 4),
-        (Math.random() * 2 - 1) * (b.y - 4),
-        (Math.random() * 2 - 1) * (b.z - 2.5) // Thin tank depth
+        (Math.random() * 2 - 1) * maxFoodX,
+        THREE.MathUtils.lerp(minFoodY, maxFoodY, Math.random()),
+        (Math.random() * 2 - 1) * maxFoodZ
       ),
       phase: Math.random() * Math.PI * 2,
       scale: 0.75 + Math.random() * 0.35,
@@ -423,15 +461,20 @@ export class Environment {
 
   spawnFoodCluster(center, count = 6) {
     const b = this.bounds;
+    const maxFoodX = b.x - 6.0;
+    const minFoodY = -b.y + 7.0;
+    const maxFoodY = b.y - 5.0;
+    const maxFoodZ = b.z - 2.5;
+
     for (let i = 0; i < count; i++) {
       if (this.foodItems.length >= this.maxFood) {
         this.foodItems.shift();
       }
       this.foodItems.push({
         position: new THREE.Vector3(
-          Math.max(-b.x + 3, Math.min(b.x - 3, center.x + (Math.random() - 0.5) * 6.0)),
-          Math.max(-b.y + 3, Math.min(b.y - 3, center.y + (Math.random() - 0.5) * 5.0)),
-          Math.max(-b.z + 1, Math.min(b.z - 1, (Math.random() - 0.5) * 4.0))
+          THREE.MathUtils.clamp(center.x + (Math.random() - 0.5) * 6.0, -maxFoodX, maxFoodX),
+          THREE.MathUtils.clamp(center.y + (Math.random() - 0.5) * 5.0, minFoodY, maxFoodY),
+          THREE.MathUtils.clamp((Math.random() - 0.5) * 4.0, -maxFoodZ, maxFoodZ)
         ),
         phase: Math.random() * Math.PI * 2,
         scale: 0.85 + Math.random() * 0.4,
@@ -1075,13 +1118,18 @@ export class Environment {
           f.position.y += Math.sin(elapsed * 0.8 + f.phase) * dt * 0.15;
           f.position.z += Math.cos(elapsed * 0.6 + f.phase) * dt * 0.08;
 
-          // Boundary wrapping with generous margins for smooth loopflow
-          if (f.position.x > b.x - 2.5) f.position.x = -b.x + 2.5;
-          if (f.position.x < -b.x + 2.5) f.position.x = b.x - 2.5;
-          if (f.position.y > b.y - 2.5) f.position.y = -b.y + 2.5;
-          if (f.position.y < -b.y + 2.5) f.position.y = b.y - 2.5;
-          if (f.position.z > b.z - 1.2) f.position.z = -b.z + 1.2;
-          if (f.position.z < -b.z + 1.2) f.position.z = b.z - 1.2;
+          // Safe inner boundary wrapping keeping plankton strictly within the water column
+          const maxFoodX = b.x - 6.0;
+          const minFoodY = -b.y + 7.0;
+          const maxFoodY = b.y - 5.0;
+          const maxFoodZ = b.z - 2.5;
+
+          if (f.position.x > maxFoodX) f.position.x = -maxFoodX;
+          if (f.position.x < -maxFoodX) f.position.x = maxFoodX;
+          if (f.position.y > maxFoodY) f.position.y = minFoodY;
+          if (f.position.y < minFoodY) f.position.y = maxFoodY;
+          if (f.position.z > maxFoodZ) f.position.z = -maxFoodZ;
+          if (f.position.z < -maxFoodZ) f.position.z = maxFoodZ;
         }
 
         dummy.position.copy(f.position);
@@ -1186,10 +1234,10 @@ export class Environment {
       positions[idx + 1] -= this.snowSpeeds[i] * dt * 0.5;
       positions[idx + 0] += Math.sin(elapsed * 0.3 + i) * dt * 0.08;
 
-      if (positions[idx + 1] < -b.y) {
-        positions[idx + 1] = b.y;
-        positions[idx + 0] = (Math.random() * 2 - 1) * b.x;
-        positions[idx + 2] = (Math.random() * 2 - 1) * b.z;
+      if (positions[idx + 1] < -b.y + 6.0) {
+        positions[idx + 1] = b.y - 3.5;
+        positions[idx + 0] = (Math.random() * 2 - 1) * (b.x - 4.0);
+        positions[idx + 2] = (Math.random() * 2 - 1) * (b.z - 2.0);
       }
     }
     this.marineSnow.geometry.attributes.position.needsUpdate = true;

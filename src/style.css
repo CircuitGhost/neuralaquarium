@@ -72,29 +72,15 @@ body, html {
 }
 
 /* Zen View: Smooth HUD Fadeout */
-#ui-overlay.zen-mode .mid-layout,
-#ui-overlay.zen-mode .drawer-left,
-#ui-overlay.zen-mode .drawer-right,
-#ui-overlay.zen-mode .brand-section > div,
-#ui-overlay.zen-mode .specimen-navigator,
-#ui-overlay.zen-mode .top-status-group > .status-pill,
-#ui-overlay.zen-mode #hud-bottom {
+#ui-overlay.zen-mode {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(6px);
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-#ui-overlay.zen-mode .top-bar {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-#ui-overlay.zen-mode #btn-zen {
-  color: var(--accent-cyan);
-  background: rgba(6, 15, 30, 0.6);
-  border: 1px solid var(--panel-border);
+#ui-overlay.zen-mode:hover {
+  opacity: 0.9;
+  pointer-events: auto;
 }
 
 /* --------------------------------------------------------------------------
